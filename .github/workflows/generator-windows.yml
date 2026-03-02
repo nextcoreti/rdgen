@@ -39,6 +39,11 @@ on:
         required: false
         default: 'false'
         type: string
+      privacylink:
+        description: "privacy screen link"
+        required: false
+        default: 'false'
+        type: string
       appname:
         description: "app name"
         required: true
