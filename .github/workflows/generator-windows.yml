@@ -134,6 +134,7 @@ jobs:
 
       - name: Authenticate to Google Cloud
         id: auth
+        continue-on-error: true
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
