@@ -34,7 +34,7 @@ jobs:
         if: ${{ inputs.version != 'master' }}
         uses: actions/checkout@v4
         with:
-          repository: mjrolin/rustdesk
+          repository: nextcoreti/rustdesk
           ref: refs/tags/${{ inputs.version }}
           submodules: recursive
 
@@ -42,7 +42,7 @@ jobs:
         if: ${{ inputs.version == 'master' }}
         uses: actions/checkout@v4
         with:
-          repository: mjrolin/rustdesk
+          repository: nextcoreti/rustdesk
           submodules: recursive
 
       - name: Install prerequisites
