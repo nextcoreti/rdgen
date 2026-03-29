@@ -472,6 +472,7 @@ jobs:
       - name: Upload Rustdesk library to Artifacts
         uses: actions/upload-artifact@master
         with:
+          retention-days: 1
           name: librustdesk.so.${{ matrix.job.target }}
           path: ./target/${{ matrix.job.target }}/release/liblibrustdesk.so
 

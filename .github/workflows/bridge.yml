@@ -104,6 +104,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@master
         with:
+          retention-days: 1
           name: bridge-artifact
           path: |
             ./src/bridge_generated.rs

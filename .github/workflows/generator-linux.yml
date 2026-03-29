@@ -618,6 +618,7 @@ jobs:
         uses: actions/upload-artifact@master
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
+          retention-days: 1
           name: ${{ inputs.filename }}-${{ matrix.job.arch }}.deb
           path: ./output/${{ inputs.filename }}-${{ matrix.job.arch }}.deb
 
