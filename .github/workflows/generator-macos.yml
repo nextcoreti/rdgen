@@ -1,17 +1,62 @@
 name: Custom macOS Client Generator
 run-name: Custom macOS Client Generator
-on: 
+on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'version to buld'
+      server:
+        description: 'Rendezvous Server'
         required: true
         default: ''
         type: string
-      zip_url:
-        description: 'url to zip of json'
+      key:
+        description: 'Public Key'
         required: true
         default: ''
+        type: string
+      apiServer:
+        description: 'API Server'
+        required: true
+        default: ''
+        type: string
+      custom:
+        description: "Custom JSON"
+        required: true
+        default: ''
+        type: string
+      uuid:
+        description: "uuid of request"
+        required: true
+        default: ''
+        type: string
+      iconlink:
+        description: "icon link"
+        required: false
+        default: 'false'
+        type: string
+      logolink:
+        description: "logo link"
+        required: false
+        default: 'false'
+        type: string
+      privacylink:
+        description: "privacy screen link"
+        required: false
+        default: 'false'
+        type: string
+      appname:
+        description: "app name"
+        required: true
+        default: 'rustdesk'
+        type: string
+      filename:
+        description: "Filename"
+        required: true
+        default: 'rustdesk'
+        type: string
+      extras:
+        description: "extra inputs in json"
+        required: true
+        default: '{}'
         type: string
 
 env:
@@ -31,7 +76,7 @@ env:
   # vcpkg version: 2024.07.12
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   ARMV7_VCPKG_COMMIT_ID: "6f29f12e82a8293156836ad81cc9bf5af41fe836"
-  VERSION: "${{ inputs.version }}"
+  VERSION: "${{ fromJson(inputs.extras).version }}"
   NDK_VERSION: "r28c"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
@@ -40,20 +85,15 @@ env:
   SIGN_BASE_URL: "${{ secrets.SIGN_BASE_URL }}"
 
 jobs:
-  setup:
-    uses: ./.github/workflows/fetch-encrypted-secrets.yml
-    with:
-      zip_url_json: ${{ inputs.zip_url }}
-
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
     with:
-      version: ${{ inputs.version }}
+      version: ${{ fromJson(inputs.extras).version }}
 
   build-for-macos:
     name: ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
-    needs: [generate-bridge, setup]
+    needs: [generate-bridge]
     strategy:
       fail-fast: false
       matrix:
@@ -79,25 +119,34 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
-      - uses: actions/download-artifact@v4
-        with:
-          name: encrypted-secrets-zip
 
-      - name: Load Secrets
-        uses: ./.github/actions/decrypt-secrets
-        with:
-          zip_password: ${{ secrets.ZIP_PASSWORD }}
-
-      - name: Finalize and Cleanup zip/json
-        if: always() # Run even if previous steps fail
-        continue-on-error: true
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: "${{ secrets.GENURL }}/cleanzip"
-          method: 'POST'
-          customHeaders: '{"Content-Type": "application/json"}'
-          data: '{"uuid": "${{ env.uuid }}"}'
+      - name: Setup environment from inputs
+        shell: bash
+        run: |
+          echo "server=${{ inputs.server }}" >> $GITHUB_ENV
+          echo "key=${{ inputs.key }}" >> $GITHUB_ENV
+          echo "apiServer=${{ inputs.apiServer }}" >> $GITHUB_ENV
+          echo "custom=${{ inputs.custom }}" >> $GITHUB_ENV
+          echo "uuid=${{ inputs.uuid }}" >> $GITHUB_ENV
+          echo "appname=${{ inputs.appname }}" >> $GITHUB_ENV
+          echo "filename=${{ inputs.filename }}" >> $GITHUB_ENV
+          echo "rdgen=true" >> $GITHUB_ENV
+          EXTRAS='${{ inputs.extras }}'
+          echo "token=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('token',''))")" >> $GITHUB_ENV
+          echo "compname=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('compname','Purslane Ltd'))")" >> $GITHUB_ENV
+          echo "urlLink=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('urlLink','https://rustdesk.com'))")" >> $GITHUB_ENV
+          echo "downloadLink=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('downloadLink','https://rustdesk.com/download'))")" >> $GITHUB_ENV
+          echo "delayFix=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('delayFix','false'))")" >> $GITHUB_ENV
+          echo "xOffline=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('xOffline','false'))")" >> $GITHUB_ENV
+          echo "removeNewVersionNotif=$(echo $EXTRAS | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('removeNewVersionNotif','false'))")" >> $GITHUB_ENV
+          ICONLINK='${{ inputs.iconlink }}'
+          if [ "$ICONLINK" != "false" ]; then
+            echo "iconlink_url=$(echo $ICONLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','false'))")" >> $GITHUB_ENV
+            echo "iconlink_file=$(echo $ICONLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('file','icon.png'))")" >> $GITHUB_ENV
+            echo "iconlink_uuid=$(echo $ICONLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('uuid',''))")" >> $GITHUB_ENV
+          else
+            echo "iconlink_url=false" >> $GITHUB_ENV
+          fi
 
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6
@@ -714,13 +763,3 @@ jobs:
             -F "file=@$GITHUB_WORKSPACE/${{ env.filename }}-${{ matrix.job.arch }}.dmg" \
             "${{ env.apiServer }}/api/save_custom_client"
 
-  cleanup:
-    needs: [build-for-macos]
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    if: always()
-    steps:
-      - name: Delete secrets artifact
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: encrypted-secrets-zip
