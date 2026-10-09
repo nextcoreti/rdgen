@@ -619,7 +619,9 @@ jobs:
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
 
       - name: Sign macOS app bundle
+        id: sign_macos
         if: env.MACOS_P12_BASE64 != ''
+        continue-on-error: true
         run: |
             cd flutter/build/macos/Build/Products/Release
             # Debug info
@@ -677,7 +679,7 @@ jobs:
             rm certificate.p12 
 
       - name: Ad-hoc Sign macOS app bundle (Fallback)
-        if: env.MACOS_P12_BASE64 == '' || env.MACOS_P12_BASE64 == null
+        if: env.MACOS_P12_BASE64 == '' || env.MACOS_P12_BASE64 == null || steps.sign_macos.outcome == 'failure'
         shell: bash
         run: |
             cd flutter/build/macos/Build/Products/Release
