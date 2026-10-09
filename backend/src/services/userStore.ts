@@ -1,10 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
+import db from './db';
 
-const USERS_FILE = path.join(__dirname, '../../data/users.json');
 const SALT_ROUNDS = 10;
 
 export type Role = 'admin' | 'operador' | 'construtor' | 'visualizador';
@@ -29,98 +27,94 @@ export const PERMISSIONS: Record<Role, string[]> = {
   visualizador: ['clients:read'],
 };
 
-function loadUsers(): User[] {
-  if (!fs.existsSync(USERS_FILE)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users: User[]): void {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  fs.chmodSync(USERS_FILE, 0o600);
+function rowToUser(row: any): User {
+  return {
+    id: row.id,
+    username: row.username,
+    passwordHash: row.password_hash,
+    name: row.name,
+    role: row.role as Role,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at,
+    lastLogin: row.last_login ?? undefined,
+  };
 }
 
 export function initUserStore(): void {
-  const dataDir = path.dirname(USERS_FILE);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  }
-
-  if (!fs.existsSync(USERS_FILE)) {
+  const existing = db.prepare('SELECT id FROM users LIMIT 1').get();
+  if (!existing) {
     const adminUser = process.env.ADMIN_USERNAME || 'admin';
     const adminPass = process.env.ADMIN_PASSWORD || 'rdgen@2024';
     const adminName = process.env.ADMIN_NAME || 'Administrador';
 
-    const user: User = {
-      id: uuidv4(),
-      username: adminUser,
-      passwordHash: bcrypt.hashSync(adminPass, SALT_ROUNDS),
-      name: adminName,
-      role: 'admin',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
+    db.prepare(`
+      INSERT INTO users (id, username, password_hash, name, role, is_active, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `).run(uuidv4(), adminUser, bcrypt.hashSync(adminPass, SALT_ROUNDS), adminName, 'admin', new Date().toISOString());
 
-    saveUsers([user]);
     logger.info(`Created initial admin user: ${adminUser}`);
   }
 }
 
 export function getAllUsers(): UserWithoutHash[] {
-  return loadUsers().map(({ passwordHash, ...rest }) => rest);
+  const rows = db.prepare('SELECT * FROM users').all() as any[];
+  return rows.map((r) => {
+    const { passwordHash, ...rest } = rowToUser(r);
+    return rest;
+  });
 }
 
 export function getUserByUsername(username: string): User | undefined {
-  return loadUsers().find(u => u.username === username && u.isActive);
+  const row = db.prepare(
+    'SELECT * FROM users WHERE username = ? AND is_active = 1'
+  ).get(username) as any;
+  return row ? rowToUser(row) : undefined;
 }
 
 export function getUserById(id: string): User | undefined {
-  return loadUsers().find(u => u.id === id);
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
+  return row ? rowToUser(row) : undefined;
 }
 
 export function createUser(username: string, password: string, name: string, role: Role): User {
-  const users = loadUsers();
-  if (users.find(u => u.username === username)) {
-    throw new Error('Username already exists');
-  }
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (existing) throw new Error('Username already exists');
 
-  const user: User = {
-    id: uuidv4(),
-    username,
-    passwordHash: bcrypt.hashSync(password, SALT_ROUNDS),
-    name,
-    role,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-  };
+  const id = uuidv4();
+  const now = new Date().toISOString();
 
-  users.push(user);
-  saveUsers(users);
+  db.prepare(`
+    INSERT INTO users (id, username, password_hash, name, role, is_active, created_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?)
+  `).run(id, username, bcrypt.hashSync(password, SALT_ROUNDS), name, role, now);
+
   logger.info(`Created user ${username} with role ${role}`);
-  return user;
+  return rowToUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any);
 }
 
-export function updateUser(id: string, updates: Partial<Pick<User, 'name' | 'role' | 'isActive' | 'passwordHash'>>): User | undefined {
-  const users = loadUsers();
-  const index = users.findIndex(u => u.id === id);
-  if (index === -1) return undefined;
+export function updateUser(
+  id: string,
+  updates: Partial<Pick<User, 'name' | 'role' | 'isActive' | 'passwordHash'>>
+): User | undefined {
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
+  if (!row) return undefined;
 
-  users[index] = { ...users[index], ...updates };
-  saveUsers(users);
+  const name = updates.name ?? row.name;
+  const role = updates.role ?? row.role;
+  const isActive = updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : row.is_active;
+  const passwordHash = updates.passwordHash ?? row.password_hash;
+
+  db.prepare(`
+    UPDATE users SET name = ?, role = ?, is_active = ?, password_hash = ? WHERE id = ?
+  `).run(name, role, isActive, passwordHash, id);
+
   logger.info(`Updated user ${id}`);
-  return users[index];
+  return rowToUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any);
 }
 
 export function deleteUser(id: string): boolean {
-  const users = loadUsers();
-  const user = users.find(u => u.id === id);
-  if (!user) return false;
-
-  user.isActive = false;
-  saveUsers(users);
+  const result = db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(id);
+  if (result.changes === 0) return false;
   logger.info(`Deactivated user ${id}`);
   return true;
 }
@@ -130,23 +124,18 @@ export function validatePassword(username: string, password: string): User | und
   if (!user || !user.isActive) return undefined;
   if (!bcrypt.compareSync(password, user.passwordHash)) return undefined;
 
-  const users = loadUsers();
-  const index = users.findIndex(u => u.id === user.id);
-  if (index !== -1) {
-    users[index].lastLogin = new Date().toISOString();
-    saveUsers(users);
-  }
+  db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(
+    new Date().toISOString(), user.id
+  );
 
   return user;
 }
 
 export function changePassword(id: string, newPassword: string): boolean {
-  const users = loadUsers();
-  const index = users.findIndex(u => u.id === id);
-  if (index === -1) return false;
-
-  users[index].passwordHash = bcrypt.hashSync(newPassword, SALT_ROUNDS);
-  saveUsers(users);
+  const result = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+    bcrypt.hashSync(newPassword, SALT_ROUNDS), id
+  );
+  if (result.changes === 0) return false;
   logger.info(`Changed password for user ${id}`);
   return true;
 }

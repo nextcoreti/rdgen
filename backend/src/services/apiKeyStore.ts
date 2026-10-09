@@ -1,46 +1,29 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import { ApiKey } from '../types';
 import logger from '../utils/logger';
+import db from './db';
 
-const DATA_DIR = path.join(__dirname, '../../data');
-const API_KEYS_FILE = path.join(DATA_DIR, 'apikeys.json');
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function rowToApiKey(row: any): ApiKey {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    tenantId: row.tenant_id,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at ?? undefined,
+    expiresAt: row.expires_at ?? undefined,
+    rateLimit: row.rate_limit ?? undefined,
+    buildsToday: row.builds_today ?? undefined,
+    lastResetDate: row.last_reset_date ?? undefined,
+    defaultConfig: row.default_config ? JSON.parse(row.default_config) : undefined,
+  };
 }
 
-// Initialize API keys file if it doesn't exist
-if (!fs.existsSync(API_KEYS_FILE)) {
-  fs.writeFileSync(API_KEYS_FILE, JSON.stringify([], null, 2));
-}
-
-function loadApiKeys(): ApiKey[] {
-  try {
-    const data = fs.readFileSync(API_KEYS_FILE, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    logger.error('Error loading API keys:', error);
-    return [];
-  }
-}
-
-function saveApiKeys(keys: ApiKey[]): void {
-  try {
-    fs.writeFileSync(API_KEYS_FILE, JSON.stringify(keys, null, 2));
-  } catch (error) {
-    logger.error('Error saving API keys:', error);
-  }
-}
-
-// Generate a secure API key
 export function generateApiKey(): string {
   return `rdgen_${crypto.randomBytes(32).toString('hex')}`;
 }
 
-// Create a new API key
 export function createApiKey(
   name: string,
   tenantId: string,
@@ -50,136 +33,108 @@ export function createApiKey(
     defaultConfig?: Partial<ApiKey['defaultConfig']>;
   }
 ): ApiKey {
-  const keys = loadApiKeys();
+  const id = crypto.randomUUID();
+  const key = generateApiKey();
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
 
-  const newKey: ApiKey = {
-    id: crypto.randomUUID(),
-    key: generateApiKey(),
-    name,
-    tenantId,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    rateLimit: options?.rateLimit || 10, // Default 10 builds per day
-    buildsToday: 0,
-    lastResetDate: new Date().toISOString().split('T')[0],
-    expiresAt: options?.expiresAt,
-    defaultConfig: options?.defaultConfig,
-  };
-
-  keys.push(newKey);
-  saveApiKeys(keys);
+  db.prepare(`
+    INSERT INTO api_keys (id, key, name, tenant_id, is_active, created_at, rate_limit, builds_today, last_reset_date, expires_at, default_config)
+    VALUES (?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)
+  `).run(
+    id, key, name, tenantId, now,
+    options?.rateLimit ?? 10,
+    today,
+    options?.expiresAt ?? null,
+    options?.defaultConfig ? JSON.stringify(options.defaultConfig) : null
+  );
 
   logger.info(`Created API key for tenant: ${tenantId}`);
-  return newKey;
+  return rowToApiKey(db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id) as any);
 }
 
-// Get API key by key string
 export function getApiKeyByKey(key: string): ApiKey | undefined {
-  const keys = loadApiKeys();
-  return keys.find(k => k.key === key);
+  const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key) as any;
+  return row ? rowToApiKey(row) : undefined;
 }
 
-// Get API key by ID
 export function getApiKeyById(id: string): ApiKey | undefined {
-  const keys = loadApiKeys();
-  return keys.find(k => k.id === id);
+  const row = db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id) as any;
+  return row ? rowToApiKey(row) : undefined;
 }
 
-// Get all API keys for a tenant
 export function getApiKeysByTenant(tenantId: string): ApiKey[] {
-  const keys = loadApiKeys();
-  return keys.filter(k => k.tenantId === tenantId);
+  const rows = db.prepare('SELECT * FROM api_keys WHERE tenant_id = ?').all(tenantId) as any[];
+  return rows.map(rowToApiKey);
 }
 
-// Get all API keys (admin)
 export function getAllApiKeys(): ApiKey[] {
-  return loadApiKeys();
+  const rows = db.prepare('SELECT * FROM api_keys').all() as any[];
+  return rows.map(rowToApiKey);
 }
 
-// Update API key
 export function updateApiKey(id: string, updates: Partial<ApiKey>): ApiKey | undefined {
-  const keys = loadApiKeys();
-  const index = keys.findIndex(k => k.id === id);
+  const row = db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id) as any;
+  if (!row) return undefined;
 
-  if (index === -1) return undefined;
+  delete (updates as any).id;
+  delete (updates as any).key;
 
-  // Don't allow changing id or key
-  delete updates.id;
-  delete updates.key;
+  db.prepare(`
+    UPDATE api_keys SET
+      name = ?, tenant_id = ?, is_active = ?, last_used_at = ?,
+      expires_at = ?, rate_limit = ?, builds_today = ?, last_reset_date = ?, default_config = ?
+    WHERE id = ?
+  `).run(
+    updates.name ?? row.name,
+    updates.tenantId ?? row.tenant_id,
+    updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : row.is_active,
+    updates.lastUsedAt ?? row.last_used_at,
+    updates.expiresAt ?? row.expires_at,
+    updates.rateLimit ?? row.rate_limit,
+    updates.buildsToday ?? row.builds_today,
+    updates.lastResetDate ?? row.last_reset_date,
+    updates.defaultConfig !== undefined ? JSON.stringify(updates.defaultConfig) : row.default_config,
+    id
+  );
 
-  keys[index] = { ...keys[index], ...updates };
-  saveApiKeys(keys);
-
-  return keys[index];
+  return rowToApiKey(db.prepare('SELECT * FROM api_keys WHERE id = ?').get(id) as any);
 }
 
-// Delete API key
 export function deleteApiKey(id: string): boolean {
-  const keys = loadApiKeys();
-  const index = keys.findIndex(k => k.id === id);
-
-  if (index === -1) return false;
-
-  keys.splice(index, 1);
-  saveApiKeys(keys);
-
-  return true;
+  const result = db.prepare('DELETE FROM api_keys WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 
-// Validate API key and check rate limit
-export function validateApiKey(key: string): {
-  valid: boolean;
-  apiKey?: ApiKey;
-  error?: string;
-} {
+export function validateApiKey(key: string): { valid: boolean; apiKey?: ApiKey; error?: string } {
   const apiKey = getApiKeyByKey(key);
 
-  if (!apiKey) {
-    return { valid: false, error: 'Invalid API key' };
-  }
-
-  if (!apiKey.isActive) {
-    return { valid: false, error: 'API key is disabled' };
-  }
-
-  // Check expiration
+  if (!apiKey) return { valid: false, error: 'Invalid API key' };
+  if (!apiKey.isActive) return { valid: false, error: 'API key is disabled' };
   if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) {
     return { valid: false, error: 'API key has expired' };
   }
 
-  // Check and reset daily rate limit
   const today = new Date().toISOString().split('T')[0];
   if (apiKey.lastResetDate !== today) {
-    // Reset daily counter
-    updateApiKey(apiKey.id, {
-      buildsToday: 0,
-      lastResetDate: today,
-    });
+    updateApiKey(apiKey.id, { buildsToday: 0, lastResetDate: today });
     apiKey.buildsToday = 0;
   }
 
-  // Check rate limit
-  if (apiKey.rateLimit && apiKey.buildsToday !== undefined && apiKey.buildsToday >= apiKey.rateLimit) {
+  if (apiKey.rateLimit && (apiKey.buildsToday ?? 0) >= apiKey.rateLimit) {
     return { valid: false, error: `Rate limit exceeded (${apiKey.rateLimit} builds/day)` };
   }
 
   return { valid: true, apiKey };
 }
 
-// Increment build count for API key
 export function incrementBuildCount(id: string): void {
   const apiKey = getApiKeyById(id);
   if (apiKey) {
-    updateApiKey(id, {
-      buildsToday: (apiKey.buildsToday || 0) + 1,
-      lastUsedAt: new Date().toISOString(),
-    });
+    updateApiKey(id, { buildsToday: (apiKey.buildsToday || 0) + 1, lastUsedAt: new Date().toISOString() });
   }
 }
 
-// Record API key usage
 export function recordApiKeyUsage(id: string): void {
-  updateApiKey(id, {
-    lastUsedAt: new Date().toISOString(),
-  });
+  updateApiKey(id, { lastUsedAt: new Date().toISOString() });
 }

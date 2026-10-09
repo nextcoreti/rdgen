@@ -1,10 +1,7 @@
-import fs from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import { encryptConfig, decryptConfig } from './cryptoService';
-
-const CLIENTS_DIR = path.join(__dirname, '../../data/clients');
+import db from './db';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,115 +52,110 @@ export interface ProfileListItem {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function clientFilePath(clientId: string): string {
-  return path.join(CLIENTS_DIR, `${clientId}.json`);
-}
+function buildClientData(clientId: string): ClientData | undefined {
+  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId) as any;
+  if (!row) return undefined;
 
-function writeClientFile(clientId: string, data: ClientData): void {
-  const filePath = clientFilePath(clientId);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  fs.chmodSync(filePath, 0o600);
-}
+  const profileRows = db.prepare(
+    'SELECT * FROM profiles WHERE client_id = ? ORDER BY created_at ASC'
+  ).all(clientId) as any[];
 
-function readClientFile(clientId: string): ClientData | undefined {
-  const filePath = clientFilePath(clientId);
-  if (!fs.existsSync(filePath)) {
-    return undefined;
-  }
-  try {
-    const data = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(data) as ClientData;
-  } catch (error) {
-    logger.error(`Failed to read client file ${clientId}:`, error);
-    return undefined;
-  }
+  const profiles: ProfileEntry[] = profileRows.map((p) => {
+    const versionRows = db.prepare(
+      'SELECT * FROM profile_versions WHERE profile_id = ? ORDER BY created_at ASC'
+    ).all(p.id) as any[];
+
+    return {
+      profileId: p.id,
+      name: p.name,
+      host: p.host,
+      platform: p.platform,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      latestVersionId: p.latest_version_id,
+      versions: versionRows.map((v) => ({
+        versionId: v.id,
+        createdAt: v.created_at,
+        label: v.label,
+        iv: v.iv,
+        authTag: v.auth_tag,
+        ciphertext: v.ciphertext,
+      })),
+    };
+  });
+
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    profiles,
+  };
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initClientStore(): void {
-  if (!fs.existsSync(CLIENTS_DIR)) {
-    fs.mkdirSync(CLIENTS_DIR, { recursive: true, mode: 0o700 });
-    logger.info(`Created clients directory at ${CLIENTS_DIR}`);
-  }
+  // No-op: SQLite tables are created in db.ts on import
 }
 
 // ── Client-level functions ─────────────────────────────────────────────────────
 
 export function listClients(): ClientListItem[] {
-  initClientStore();
+  const rows = db.prepare(`
+    SELECT c.id, c.name, c.updated_at, COUNT(p.id) as profile_count
+    FROM clients c
+    LEFT JOIN profiles p ON p.client_id = c.id
+    GROUP BY c.id
+    ORDER BY c.updated_at DESC
+  `).all() as any[];
 
-  const files = fs.readdirSync(CLIENTS_DIR).filter((f) => f.endsWith('.json'));
-  const clients: ClientListItem[] = [];
-
-  for (const file of files) {
-    try {
-      const data = fs.readFileSync(path.join(CLIENTS_DIR, file), 'utf-8');
-      const client = JSON.parse(data) as ClientData;
-      clients.push({
-        id: client.id,
-        name: client.name,
-        profileCount: client.profiles.length,
-        updatedAt: client.updatedAt,
-      });
-    } catch (error) {
-      logger.error(`Failed to read client file ${file}:`, error);
-    }
-  }
-
-  clients.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
-
-  return clients;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    profileCount: r.profile_count,
+    updatedAt: r.updated_at,
+  }));
 }
 
 export function getClient(id: string): ClientData | undefined {
-  return readClientFile(id);
+  return buildClientData(id);
 }
 
 export function createClient(name: string): ClientData {
-  initClientStore();
-
   const id = uuidv4();
   const now = new Date().toISOString();
 
-  const client: ClientData = {
-    id,
-    name,
-    createdAt: now,
-    updatedAt: now,
-    profiles: [],
-  };
+  db.prepare(
+    'INSERT INTO clients (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)'
+  ).run(id, name, now, now);
 
-  writeClientFile(id, client);
   logger.info(`Created client ${id} (${name})`);
 
-  return client;
+  return { id, name, createdAt: now, updatedAt: now, profiles: [] };
 }
 
 export function renameClient(id: string, name: string): ClientData | undefined {
-  const client = readClientFile(id);
-  if (!client) {
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE clients SET name = ?, updated_at = ? WHERE id = ?'
+  ).run(name, now, id);
+
+  if (result.changes === 0) {
     logger.warn(`Client ${id} not found for rename`);
     return undefined;
   }
 
-  client.name = name;
-  client.updatedAt = new Date().toISOString();
-  writeClientFile(client.id, client);
   logger.info(`Renamed client ${id} to "${name}"`);
-  return client;
+  return buildClientData(id);
 }
 
 export function deleteClient(id: string): boolean {
-  const filePath = clientFilePath(id);
-  if (!fs.existsSync(filePath)) {
+  const result = db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+  if (result.changes === 0) {
     logger.warn(`Client ${id} not found for deletion`);
     return false;
   }
-
-  fs.unlinkSync(filePath);
   logger.info(`Deleted client ${id}`);
   return true;
 }
@@ -177,7 +169,7 @@ export function createProfile(
   platform: string,
   config: Record<string, unknown>
 ): ProfileEntry | undefined {
-  const client = readClientFile(clientId);
+  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
   if (!client) {
     logger.warn(`Client ${clientId} not found for createProfile`);
     return undefined;
@@ -186,10 +178,23 @@ export function createProfile(
   const profileId = uuidv4();
   const versionId = uuidv4();
   const now = new Date().toISOString();
-
   const encrypted = encryptConfig(config);
 
-  const profile: ProfileEntry = {
+  db.prepare(`
+    INSERT INTO profiles (id, client_id, name, host, platform, created_at, updated_at, latest_version_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(profileId, clientId, profileName, host, platform, now, now, versionId);
+
+  db.prepare(`
+    INSERT INTO profile_versions (id, profile_id, created_at, label, iv, auth_tag, ciphertext)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(versionId, profileId, now, '', encrypted.iv, encrypted.authTag, encrypted.ciphertext);
+
+  db.prepare('UPDATE clients SET updated_at = ? WHERE id = ?').run(now, clientId);
+
+  logger.info(`Created profile ${profileId} (${profileName}) for client ${clientId}`);
+
+  return {
     profileId,
     name: profileName,
     host,
@@ -197,24 +202,8 @@ export function createProfile(
     createdAt: now,
     updatedAt: now,
     latestVersionId: versionId,
-    versions: [
-      {
-        versionId,
-        createdAt: now,
-        label: '',
-        iv: encrypted.iv,
-        authTag: encrypted.authTag,
-        ciphertext: encrypted.ciphertext,
-      },
-    ],
+    versions: [{ versionId, createdAt: now, label: '', iv: encrypted.iv, authTag: encrypted.authTag, ciphertext: encrypted.ciphertext }],
   };
-
-  client.profiles.push(profile);
-  client.updatedAt = now;
-  writeClientFile(clientId, client);
-  logger.info(`Created profile ${profileId} (${profileName}) for client ${clientId}`);
-
-  return profile;
 }
 
 export function addProfileVersion(
@@ -222,13 +211,10 @@ export function addProfileVersion(
   profileId: string,
   config: Record<string, unknown>
 ): ProfileEntry | undefined {
-  const client = readClientFile(clientId);
-  if (!client) {
-    logger.warn(`Client ${clientId} not found for addProfileVersion`);
-    return undefined;
-  }
+  const profile = db.prepare(
+    'SELECT * FROM profiles WHERE id = ? AND client_id = ?'
+  ).get(profileId, clientId) as any;
 
-  const profile = client.profiles.find((p) => p.profileId === profileId);
   if (!profile) {
     logger.warn(`Profile ${profileId} not found in client ${clientId}`);
     return undefined;
@@ -236,25 +222,42 @@ export function addProfileVersion(
 
   const versionId = uuidv4();
   const now = new Date().toISOString();
-
   const encrypted = encryptConfig(config);
 
-  profile.versions.push({
-    versionId,
-    createdAt: now,
-    label: '',
-    iv: encrypted.iv,
-    authTag: encrypted.authTag,
-    ciphertext: encrypted.ciphertext,
-  });
-  profile.latestVersionId = versionId;
-  profile.updatedAt = now;
-  client.updatedAt = now;
+  db.prepare(`
+    INSERT INTO profile_versions (id, profile_id, created_at, label, iv, auth_tag, ciphertext)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(versionId, profileId, now, '', encrypted.iv, encrypted.authTag, encrypted.ciphertext);
 
-  writeClientFile(clientId, client);
+  db.prepare(
+    'UPDATE profiles SET latest_version_id = ?, updated_at = ? WHERE id = ?'
+  ).run(versionId, now, profileId);
+
+  db.prepare('UPDATE clients SET updated_at = ? WHERE id = ?').run(now, clientId);
+
   logger.info(`Added version ${versionId} to profile ${profileId} in client ${clientId}`);
 
-  return profile;
+  const versionRows = db.prepare(
+    'SELECT * FROM profile_versions WHERE profile_id = ? ORDER BY created_at ASC'
+  ).all(profileId) as any[];
+
+  return {
+    profileId: profile.id,
+    name: profile.name,
+    host: profile.host,
+    platform: profile.platform,
+    createdAt: profile.created_at,
+    updatedAt: now,
+    latestVersionId: versionId,
+    versions: versionRows.map((v) => ({
+      versionId: v.id,
+      createdAt: v.created_at,
+      label: v.label,
+      iv: v.iv,
+      authTag: v.auth_tag,
+      ciphertext: v.ciphertext,
+    })),
+  };
 }
 
 export function getProfileVersion(
@@ -262,23 +265,20 @@ export function getProfileVersion(
   profileId: string,
   versionId: string
 ): Record<string, unknown> | undefined {
-  const client = readClientFile(clientId);
-  if (!client) {
-    return undefined;
-  }
+  const profile = db.prepare(
+    'SELECT id FROM profiles WHERE id = ? AND client_id = ?'
+  ).get(profileId, clientId);
 
-  const profile = client.profiles.find((p) => p.profileId === profileId);
-  if (!profile) {
-    return undefined;
-  }
+  if (!profile) return undefined;
 
-  const version = profile.versions.find((v) => v.versionId === versionId);
-  if (!version) {
-    return undefined;
-  }
+  const version = db.prepare(
+    'SELECT * FROM profile_versions WHERE id = ? AND profile_id = ?'
+  ).get(versionId, profileId) as any;
+
+  if (!version) return undefined;
 
   try {
-    return decryptConfig(version.iv, version.authTag, version.ciphertext);
+    return decryptConfig(version.iv, version.auth_tag, version.ciphertext);
   } catch (error) {
     logger.error(`Failed to decrypt version ${versionId} in profile ${profileId}:`, error);
     return undefined;
@@ -290,45 +290,57 @@ export function renameProfile(
   profileId: string,
   name: string
 ): ProfileEntry | undefined {
-  const client = readClientFile(clientId);
-  if (!client) {
-    logger.warn(`Client ${clientId} not found for renameProfile`);
-    return undefined;
-  }
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE profiles SET name = ?, updated_at = ? WHERE id = ? AND client_id = ?'
+  ).run(name, now, profileId, clientId);
 
-  const profile = client.profiles.find((p) => p.profileId === profileId);
-  if (!profile) {
+  if (result.changes === 0) {
     logger.warn(`Profile ${profileId} not found in client ${clientId}`);
     return undefined;
   }
 
-  profile.name = name;
-  profile.updatedAt = new Date().toISOString();
-  client.updatedAt = profile.updatedAt;
-  writeClientFile(clientId, client);
+  db.prepare('UPDATE clients SET updated_at = ? WHERE id = ?').run(now, clientId);
   logger.info(`Renamed profile ${profileId} to "${name}" in client ${clientId}`);
 
-  return profile;
+  const profileRow = db.prepare('SELECT * FROM profiles WHERE id = ?').get(profileId) as any;
+  const versionRows = db.prepare(
+    'SELECT * FROM profile_versions WHERE profile_id = ? ORDER BY created_at ASC'
+  ).all(profileId) as any[];
+
+  return {
+    profileId: profileRow.id,
+    name: profileRow.name,
+    host: profileRow.host,
+    platform: profileRow.platform,
+    createdAt: profileRow.created_at,
+    updatedAt: profileRow.updated_at,
+    latestVersionId: profileRow.latest_version_id,
+    versions: versionRows.map((v) => ({
+      versionId: v.id,
+      createdAt: v.created_at,
+      label: v.label,
+      iv: v.iv,
+      authTag: v.auth_tag,
+      ciphertext: v.ciphertext,
+    })),
+  };
 }
 
 export function deleteProfile(clientId: string, profileId: string): boolean {
-  const client = readClientFile(clientId);
-  if (!client) {
-    logger.warn(`Client ${clientId} not found for deleteProfile`);
-    return false;
-  }
+  const result = db.prepare(
+    'DELETE FROM profiles WHERE id = ? AND client_id = ?'
+  ).run(profileId, clientId);
 
-  const index = client.profiles.findIndex((p) => p.profileId === profileId);
-  if (index === -1) {
+  if (result.changes === 0) {
     logger.warn(`Profile ${profileId} not found in client ${clientId}`);
     return false;
   }
 
-  client.profiles.splice(index, 1);
-  client.updatedAt = new Date().toISOString();
-  writeClientFile(clientId, client);
+  db.prepare('UPDATE clients SET updated_at = ? WHERE id = ?').run(
+    new Date().toISOString(), clientId
+  );
   logger.info(`Deleted profile ${profileId} from client ${clientId}`);
-
   return true;
 }
 
@@ -337,23 +349,39 @@ export function updateProfileHost(
   profileId: string,
   host: string
 ): ProfileEntry | undefined {
-  const client = readClientFile(clientId);
-  if (!client) {
-    logger.warn(`Client ${clientId} not found for updateProfileHost`);
-    return undefined;
-  }
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE profiles SET host = ?, updated_at = ? WHERE id = ? AND client_id = ?'
+  ).run(host, now, profileId, clientId);
 
-  const profile = client.profiles.find((p) => p.profileId === profileId);
-  if (!profile) {
+  if (result.changes === 0) {
     logger.warn(`Profile ${profileId} not found in client ${clientId}`);
     return undefined;
   }
 
-  profile.host = host;
-  profile.updatedAt = new Date().toISOString();
-  client.updatedAt = profile.updatedAt;
-  writeClientFile(clientId, client);
+  db.prepare('UPDATE clients SET updated_at = ? WHERE id = ?').run(now, clientId);
   logger.info(`Updated host for profile ${profileId} in client ${clientId}`);
 
-  return profile;
+  const profileRow = db.prepare('SELECT * FROM profiles WHERE id = ?').get(profileId) as any;
+  const versionRows = db.prepare(
+    'SELECT * FROM profile_versions WHERE profile_id = ? ORDER BY created_at ASC'
+  ).all(profileId) as any[];
+
+  return {
+    profileId: profileRow.id,
+    name: profileRow.name,
+    host: profileRow.host,
+    platform: profileRow.platform,
+    createdAt: profileRow.created_at,
+    updatedAt: profileRow.updated_at,
+    latestVersionId: profileRow.latest_version_id,
+    versions: versionRows.map((v) => ({
+      versionId: v.id,
+      createdAt: v.created_at,
+      label: v.label,
+      iv: v.iv,
+      authTag: v.auth_tag,
+      ciphertext: v.ciphertext,
+    })),
+  };
 }

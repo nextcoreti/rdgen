@@ -12,6 +12,10 @@ import clientsRoutes from './routes/clients';
 import { ensureClientProfileKey } from './services/cryptoService';
 import { initClientStore } from './services/clientStore';
 import { initUserStore } from './services/userStore';
+import { runMigration } from './services/migrate';
+
+// Migrate existing JSON data to SQLite (no-op if already done)
+runMigration();
 
 // Initialize user store (creates admin from .env if needed)
 initUserStore();
