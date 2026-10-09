@@ -753,10 +753,7 @@ jobs:
       - name: Build appimage package
         shell: bash
         run: |
-          sed -ie "s|rustdesk|${{ env.appname }}|g" appimage/*
-          [ "${{ env.appname }}" != "rustdesk" ] && mv appimage/rustdesk.deb "appimage/${{ env.appname }}.deb" || true
-
-           # install libarchive-tools for bsdtar command used in AppImageBuilder.yml
+          # install libarchive-tools for bsdtar command used in AppImageBuilder.yml
           sudo apt-get update -y
           # https://github.com/AppImage/AppImageKit/wiki/FUSE
           sudo apt-get install -y libarchive-tools libfuse2
@@ -767,7 +764,7 @@ jobs:
           # run appimage-builder
           pushd appimage
           sudo appimage-builder --skip-tests --recipe ./AppImageBuilder-${{ matrix.job.arch }}.yml
-          sudo mv ./${{ env.appname }}-${{ env.VERSION }}-${{ matrix.job.arch }}.AppImage ./${{ env.filename }}-${{ matrix.job.arch }}.AppImage
+          sudo mv ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.AppImage ./${{ env.filename }}-${{ matrix.job.arch }}.AppImage
 
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
