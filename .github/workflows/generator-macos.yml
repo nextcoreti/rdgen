@@ -147,6 +147,14 @@ jobs:
           else
             echo "iconlink_url=false" >> $GITHUB_ENV
           fi
+          LOGOLINK='${{ inputs.logolink }}'
+          if [ "$LOGOLINK" != "false" ]; then
+            echo "logolink_url=$(echo $LOGOLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','false'))")" >> $GITHUB_ENV
+            echo "logolink_file=$(echo $LOGOLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('file','logo.png'))")" >> $GITHUB_ENV
+            echo "logolink_uuid=$(echo $LOGOLINK | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('uuid',''))")" >> $GITHUB_ENV
+          else
+            echo "logolink_url=false" >> $GITHUB_ENV
+          fi
 
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6

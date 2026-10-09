@@ -239,7 +239,7 @@ jobs:
         shell: bash
 
       - name: icon stuff
-        if: ${{ env.iconlink_url != 'false' }}
+        if: ${{ inputs.iconlink != 'false' }}
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 5
@@ -250,7 +250,7 @@ jobs:
             mv ./res/icon.ico ./res/icon.ico.bak
             mv ./res/icon.png ./res/icon.png.bak
             mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-            wget -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
+            wget -O ./res/icon.png ${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}"&"uuid=${{ fromJson(inputs.iconlink).uuid }}
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
@@ -535,10 +535,10 @@ jobs:
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             mkdir -p flutter/tmpdeb/usr/share/rustdesk
             cp ./custom_.txt ./flutter/tmpdeb/usr/share/rustdesk/custom_.txt
-            if [[ "${{ env.logolink_url }}" != "false" ]]; then
-              wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
+            if [[ "${{ inputs.logolink }}" != "false" ]]; then
+              wget -O ./flutter/assets/logo.png ${{ fromJson(inputs.logolink).url }}/get_png?filename=${{ fromJson(inputs.logolink).file }}"&"uuid=${{ fromJson(inputs.logolink).uuid }}
             fi
-            if [[ "${{ env.iconlink_url }}" != "false" ]]; then
+            if [[ "${{ inputs.iconlink }}" != "false" ]]; then
               mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
               convert ./res/icon.png ./flutter/assets/icon.svg
               convert ./res/128x128.png -resize 200% ./flutter/assets/128x128@2x.png || true
@@ -715,7 +715,7 @@ jobs:
           mv ${{ env.filename }}-${{ matrix.job.arch }}.deb appimage/rustdesk.deb
 
       - name: icon stuff
-        if: ${{ env.iconlink_url != 'false' }}
+        if: ${{ inputs.iconlink != 'false' }}
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 5
@@ -726,7 +726,7 @@ jobs:
             mv ./res/icon.ico ./res/icon.ico.bak
             mv ./res/icon.png ./res/icon.png.bak
             mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-            wget -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
+            wget -O ./res/icon.png ${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}"&"uuid=${{ fromJson(inputs.iconlink).uuid }}
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
