@@ -638,7 +638,7 @@ jobs:
             ls -la "${{ env.appname }}.app/Contents" || echo "Contents not found"
             
             # Decode the certificate
-            echo "${{ secrets.MACOS_P12_BASE64 }}" | base64 --decode > certificate.p12
+            printf '%s' "${{ secrets.MACOS_P12_BASE64 }}" | tr -d ' \n\r' | base64 --decode > certificate.p12
             
             # Sign the app bundle and its contents
             if [ -d "${{ env.appname }}.app/Contents/MacOS" ]; then
