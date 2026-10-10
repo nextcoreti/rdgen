@@ -557,16 +557,6 @@ jobs:
       #   run: |
       #     cp -rf ../target/release/service ./build/macos/Build/Products/Release/RustDesk.app/Contents/MacOS/
       
-      - name: Install rcodesign tool
-        if: env.MACOS_P12_BASE64 != null
-        shell: bash
-        run: |
-          pushd /tmp
-          wget https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.22.0/apple-codesign-0.22.0-macos-universal.tar.gz
-          tar -zxvf apple-codesign-0.22.0-macos-universal.tar.gz
-          mv apple-codesign-0.22.0-macos-universal/rcodesign /usr/local/bin
-          popd
-
       - name: Install build runtime
         run: |
           brew install llvm create-dmg nasm cmake gcc wget ninja
@@ -618,108 +608,89 @@ jobs:
             -O "$ASSETS_DIR/logo.png" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
 
-      - name: Sign macOS app bundle
-        id: sign_macos
-        if: env.MACOS_P12_BASE64 != ''
-        continue-on-error: true
-        run: |
-            cd flutter/build/macos/Build/Products/Release
-            # Debug info
-            echo "Current directory contents:"
-            ls -la
-            
-            # Rename RustDesk.app to the custom app name first
-            if [ -d "RustDesk.app" ]; then
-              # First rename the app if it's still called RustDesk.app
-              mv "RustDesk.app" "${{ env.appname }}.app"
-              echo "Renamed RustDesk.app to ${{ env.appname }}.app"
-            fi
-            
-            echo "App bundle contents after rename:"
-            ls -la "${{ env.appname }}.app" || echo "App not found"
-            ls -la "${{ env.appname }}.app/Contents" || echo "Contents not found"
-            
-            # Decode the certificate
-            printf '%s' "${{ secrets.MACOS_P12_BASE64 }}" | tr -d ' \n\r' | base64 --decode > certificate.p12
-            
-            # Sign the app bundle and its contents
-            if [ -d "${{ env.appname }}.app/Contents/MacOS" ]; then
-              echo "Signing main executable..."
-              MAIN_EXECUTABLE="${{ env.appname }}.app/Contents/MacOS/${{ env.appname }}"
-              if [ -f "$MAIN_EXECUTABLE" ]; then
-                rcodesign sign --p12-file certificate.p12 --p12-password "${{ secrets.MACOS_P12_PASSWORD }}" \
-                  --code-signature-flags runtime "$MAIN_EXECUTABLE"
-              else
-                echo "Main executable not found at expected path: $MAIN_EXECUTABLE"
-                # Try to find the actual executable
-                echo "Available executables in MacOS directory:"
-                ls -la "${{ env.appname }}.app/Contents/MacOS/"
-                ACTUAL_EXECUTABLE=$(ls "${{ env.appname }}.app/Contents/MacOS/" | head -n 1)
-                if [ -n "$ACTUAL_EXECUTABLE" ]; then
-                  echo "Found executable: $ACTUAL_EXECUTABLE"
-                  rcodesign sign --p12-file certificate.p12 --p12-password "${{ secrets.MACOS_P12_PASSWORD }}" \
-                    --code-signature-flags runtime "${{ env.appname }}.app/Contents/MacOS/$ACTUAL_EXECUTABLE"
-                fi
-              fi
-              
-              echo "Signing frameworks..."
-              find "${{ env.appname }}.app/Contents/Frameworks" -type f -not -name ".*" -exec \
-                rcodesign sign --p12-file certificate.p12 --p12-password "${{ secrets.MACOS_P12_PASSWORD }}" \
-                --code-signature-flags runtime {} \;
-              
-              echo "Signing main bundle..."
-              rcodesign sign --p12-file certificate.p12 --p12-password "${{ secrets.MACOS_P12_PASSWORD }}" \
-                --code-signature-flags runtime "${{ env.appname }}.app"
-            else
-              echo "Error: Invalid app bundle structure"
-              exit 1
-            fi
-            
-            # Clean up
-            rm certificate.p12 
-
-      - name: Ad-hoc Sign macOS app bundle (Fallback)
-        if: env.MACOS_P12_BASE64 == '' || env.MACOS_P12_BASE64 == null || steps.sign_macos.outcome == 'failure'
+      - name: Rename app bundle
         shell: bash
         run: |
-            cd flutter/build/macos/Build/Products/Release
-            
-            # Renombrar RustDesk.app al nombre de la marca blanca si aplica
-            if [ -d "RustDesk.app" ]; then
-              mv "RustDesk.app" "${{ env.appname }}.app"
-              echo "RustDesk.app renombrado a ${{ env.appname }}.app"
-            fi
-            
-            TARGET_APP="${{ env.appname }}.app"
-            
-            if [ -d "$TARGET_APP" ]; then
-              echo "Limpiando atributos extendidos..."
-              xattr -cr "$TARGET_APP" || true
-              
-              echo "Re-firmando $TARGET_APP de forma Ad-Hoc y recursiva..."
-              codesign --force --deep --sign - "$TARGET_APP"
-              echo "Firma Ad-Hoc completada con exito."
-            else
-              echo "Error: No se encontro la app bundle en $TARGET_APP para firmar."
-              exit 1
-            fi
-
-      - name: Create DMG
-        run: |
-          cd /Users/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/flutter/build/macos/Build/Products/Release
-          # Print directory contents for debugging
-          echo "Directory contents:"
-          ls -la
-          # Find the actual .app bundle
-          if [ -d "RustDesk.app" ]; then
-            # First rename the app if it's still called RustDesk.app
+          cd flutter/build/macos/Build/Products/Release
+          if [ -d "RustDesk.app" ] && [ "RustDesk.app" != "${{ env.appname }}.app" ]; then
             mv "RustDesk.app" "${{ env.appname }}.app"
           fi
           if [ ! -d "${{ env.appname }}.app" ]; then
-            echo "Could not find .app bundle!"
+            echo "::error::app bundle ${{ env.appname }}.app not found"; ls -la; exit 1
+          fi
+
+      # With MACOS_P12_BASE64 configured, signing and notarization are mandatory:
+      # any failure fails the build instead of silently shipping an ad-hoc app.
+      - name: Import Developer ID certificate
+        if: env.MACOS_P12_BASE64 != ''
+        shell: bash
+        env:
+          P12_BASE64: ${{ secrets.MACOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+        run: |
+          P12="$RUNNER_TEMP/cert.p12"
+          CLEAN=$(printf '%s' "$P12_BASE64" | tr -d ' \n\r\t')
+          BAD=$(printf '%s' "$CLEAN" | tr -d 'A-Za-z0-9+/=' | wc -c | tr -d ' ')
+          echo "MACOS_P12_BASE64: ${#CLEAN} chars, ${BAD} chars outside the base64 alphabet, length mod 4 = $(( ${#CLEAN} % 4 ))"
+          if ! printf '%s' "$CLEAN" | base64 --decode > "$P12" 2>/dev/null || [ ! -s "$P12" ]; then
+            echo "::error::MACOS_P12_BASE64 is not valid base64. Re-create it with: base64 -i cert.p12 | tr -d '\n' | pbcopy"
             exit 1
           fi
-          echo "Creating DMG for ${{ env.appname }}.app"
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASS=$(uuidgen)
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          if ! security import "$P12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign; then
+            echo "::error::could not import the .p12 (wrong MACOS_P12_PASSWORD or corrupt file)"
+            rm -f "$P12"; exit 1
+          fi
+          rm -f "$P12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KC"
+          IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | awk '{print $2}')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::the .p12 has no valid 'Developer ID Application' identity (Installer/Apple Development/Distribution do not work outside the App Store)"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+
+      - name: Sign app bundle (Developer ID, inside-out)
+        if: env.MACOS_P12_BASE64 != ''
+        shell: bash
+        run: |
+          cd flutter/build/macos/Build/Products/Release
+          APP="${{ env.appname }}.app"
+          ENT="$GITHUB_WORKSPACE/flutter/macos/Runner/Release.entitlements"
+          SIGN=(codesign --force --timestamp --options runtime --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY")
+          xattr -cr "$APP"
+          # 1. loose dylibs/so inside Frameworks and Resources
+          find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | while IFS= read -r -d '' f; do "${SIGN[@]}" "$f"; done
+          # 2. frameworks (deepest first)
+          find "$APP/Contents/Frameworks" -depth -type d -name "*.framework" -print0 2>/dev/null | while IFS= read -r -d '' f; do "${SIGN[@]}" "$f"; done
+          # 3. executables in Contents/MacOS (main binary, service, ...)
+          find "$APP/Contents/MacOS" -type f -perm -u+x -print0 | while IFS= read -r -d '' f; do "${SIGN[@]}" --entitlements "$ENT" "$f"; done
+          # 4. the bundle itself, last
+          "${SIGN[@]}" --entitlements "$ENT" "$APP"
+          codesign --verify --deep --strict -vvv "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier"
+          codesign -dvv "$APP" 2>&1 | grep -q "Authority=Developer ID Application" || { echo "::error::app is not signed with Developer ID Application"; exit 1; }
+
+      - name: Ad-hoc sign app bundle (no certificate configured)
+        if: env.MACOS_P12_BASE64 == ''
+        shell: bash
+        run: |
+          echo "::warning::MACOS_P12_BASE64 is not set: shipping an ad-hoc signed, non-notarized app (Gatekeeper will block it)"
+          cd flutter/build/macos/Build/Products/Release
+          xattr -cr "${{ env.appname }}.app" || true
+          codesign --force --deep --sign - "${{ env.appname }}.app"
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          cd flutter/build/macos/Build/Products/Release
           create-dmg \
             --volname "${{ env.appname }}" \
             --window-pos 200 120 \
@@ -731,7 +702,48 @@ jobs:
             "${{ env.appname }}-${{ matrix.job.arch }}.dmg" \
             "${{ env.appname }}.app"
           mv "${{ env.appname }}-${{ matrix.job.arch }}.dmg" $GITHUB_WORKSPACE/
-  
+
+      - name: Sign, notarize and staple DMG
+        if: env.MACOS_P12_BASE64 != ''
+        shell: bash
+        env:
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          DMG="${{ env.appname }}-${{ matrix.job.arch }}.dmg"
+          codesign --force --timestamp --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$DMG"
+          codesign -dvv "$DMG" 2>&1 | grep -E "Authority|TeamIdentifier"
+          if [ -z "$NOTARY_KEY_ID" ] || [ -z "$NOTARY_ISSUER_ID" ] || [ -z "$NOTARY_KEY" ]; then
+            echo "::error::notarization secrets missing: set MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER_ID and MACOS_NOTARY_KEY (.p8 contents) from App Store Connect > Users and Access > Integrations > Keys"
+            exit 1
+          fi
+          P8="$RUNNER_TEMP/notary.p8"
+          printf '%s\n' "$NOTARY_KEY" > "$P8"
+          set +e
+          xcrun notarytool submit "$DMG" --key "$P8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json"
+          set -e
+          cat "$RUNNER_TEMP/notary.json"
+          STATUS=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('status',''))" "$RUNNER_TEMP/notary.json" 2>/dev/null || true)
+          SUB_ID=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('id',''))" "$RUNNER_TEMP/notary.json" 2>/dev/null || true)
+          if [ "$STATUS" != "Accepted" ]; then
+            [ -n "$SUB_ID" ] && xcrun notarytool log "$SUB_ID" --key "$P8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" || true
+            rm -f "$P8"
+            echo "::error::notarization was not accepted (status: ${STATUS:-unknown})"
+            exit 1
+          fi
+          rm -f "$P8"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -vvv -t open --context context:primary-signature "$DMG"
+
+      - name: Remove signing keychain
+        if: always() && env.SIGN_KEYCHAIN != ''
+        shell: bash
+        run: security delete-keychain "$SIGN_KEYCHAIN" || true
+
       - name: Rename rustdesk
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
