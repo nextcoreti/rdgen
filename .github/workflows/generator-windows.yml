@@ -647,13 +647,14 @@ jobs:
           data: '{"uuid": "${{ inputs.uuid }}", "status": "85% complete"}'
 
       - name: Sign EXE and MSI with Jsign
-        continue-on-error: true
         shell: bash
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
+          signed=0
           for file in ./SignOutput/*.exe ./SignOutput/*.msi; do
             if [ -f "$file" ]; then
+              signed=$((signed+1))
               echo "Signing $file..."
               java -jar "$RUNNER_TEMP/jsign.jar" \
                 --storetype GOOGLECLOUD \
@@ -662,9 +663,10 @@ jobs:
                 --alias "certera-code-signing" \
                 --certfile "$RUNNER_TEMP/signing_cert.pem" \
                 --tsaurl http://timestamp.sectigo.com \
-                "$file" || echo "Failed to sign $file"
+                "$file" || { echo "::error::Failed to sign $file"; exit 1; }
             fi
           done
+          if [ "$signed" -eq 0 ]; then echo "::error::No files found to sign in SignOutput"; exit 1; fi
 
       - name: rename rustdesk.exe to filename.exe
         run: |
