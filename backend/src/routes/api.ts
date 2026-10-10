@@ -21,7 +21,6 @@ import {
   getBuildArtifactByExtension,
   BUILDS_DIR,
 } from '../services/fileService';
-import { signFile } from '../services/signingService';
 import {
   createApiKey,
   getAllApiKeys,
@@ -437,16 +436,7 @@ router.post(
     const filePath = saveBuildArtifact(uuid, req.file.originalname, req.file.buffer);
     logger.info(`Saved build artifact: ${filePath}`);
 
-    // Sign the file with code signing certificate
-    // DISABLED FOR TESTING - checking if GitHub Actions signing works
-    // const signResult = await signFile(filePath);
-    // if (signResult.success) {
-    //   logger.info(`Successfully signed: ${filePath}`);
-    // } else {
-    //   logger.warn(`Signing failed for ${filePath}: ${signResult.error}`);
-    //   // Continue even if signing fails - artifact is still usable, just unsigned
-    // }
-    logger.info(`Local signing DISABLED for testing - file saved without local signing: ${filePath}`);
+    // Code signing is done in the GitHub Actions workflows (jsign + Google Cloud KMS)
 
     // Update job with artifact URL
     const filename = req.file.originalname.toLowerCase();
