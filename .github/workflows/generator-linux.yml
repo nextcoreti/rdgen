@@ -753,6 +753,15 @@ jobs:
       - name: Build appimage package
         shell: bash
         run: |
+          if [ "${{ env.appname }}" != "rustdesk" ] && [ "${{ env.appname }}" != "RustDesk" ]; then
+            # The deb paths are already renamed to <appname> by build-rustdesk-linux,
+            # so the recipe must be too. After the sed the recipe extracts
+            # <appname>.deb. The deb is moved aside first because appimage/* globs it
+            # and sed over an ar archive would rewrite bytes inside it.
+            mv appimage/rustdesk.deb "${RUNNER_TEMP}/appimage-payload.deb"
+            sed -i "s|rustdesk|${{ env.appname }}|g" appimage/*
+            mv "${RUNNER_TEMP}/appimage-payload.deb" "appimage/${{ env.appname }}.deb"
+          fi
           # install libarchive-tools for bsdtar command used in AppImageBuilder.yml
           sudo apt-get update -y
           # https://github.com/AppImage/AppImageKit/wiki/FUSE
@@ -764,7 +773,13 @@ jobs:
           # run appimage-builder
           pushd appimage
           sudo appimage-builder --skip-tests --recipe ./AppImageBuilder-${{ matrix.job.arch }}.yml
-          sudo mv ./rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.AppImage ./${{ env.filename }}-${{ matrix.job.arch }}.AppImage
+          # output is <recipe name>-<recipe version>-<arch>.AppImage
+          dest="${{ env.filename }}-${{ matrix.job.arch }}.AppImage"
+          src=$(find . -maxdepth 1 -name "*-${{ matrix.job.arch }}.AppImage" ! -name "$dest" | head -1)
+          if [ -z "$src" ]; then
+            echo "::error::no *-${{ matrix.job.arch }}.AppImage produced by appimage-builder"; ls -l; exit 1
+          fi
+          sudo mv "$src" "./$dest"
 
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
@@ -841,6 +856,29 @@ jobs:
         run: |
           mv ${{ env.filename }}-${{ matrix.job.arch }}.deb flatpak/rustdesk.deb
 
+      - name: Rename flatpak manifest to appname
+        shell: bash
+        run: |
+          BUNDLE_ID="com.rustdesk.RustDesk"
+          if [ "${{ env.appname }}" != "rustdesk" ] && [ "${{ env.appname }}" != "RustDesk" ]; then
+            # Same as AppImage: the deb paths use <appname>. Placeholders avoid
+            # re-matching an appname that contains "RustDesk"; the bundle ID must
+            # be reverse-DNS without spaces.
+            mv flatpak/rustdesk.deb "${RUNNER_TEMP}/flatpak-payload.deb"
+            sed -i "s|rustdesk|@@RDGEN_FLAT_0@@|g" flatpak/*
+            sed -i "s|RustDesk|@@RDGEN_FLAT_1@@|g" flatpak/*
+            sed -i "s|@@RDGEN_FLAT_0@@|${{ env.appname }}|g" flatpak/*
+            sed -i "s|@@RDGEN_FLAT_1@@|${{ env.appname }}|g" flatpak/*
+            mv "${RUNNER_TEMP}/flatpak-payload.deb" "flatpak/${{ env.appname }}.deb"
+            FLAT="$(echo "${{ env.appname }}" | tr -d " ")"
+            BUNDLE_ID="com.${FLAT}.${FLAT}"
+            sed -i "s|\"id\": \"com[^\"]*\"|\"id\": \"${BUNDLE_ID}\"|" flatpak/rustdesk.json
+            sed -i "s|\"path\": \"com[^\"]*\\.metainfo\\.xml\"|\"path\": \"${BUNDLE_ID}.metainfo.xml\"|" flatpak/rustdesk.json
+            sed -i "s|<id>com[^<]*</id>|<id>${BUNDLE_ID}</id>|" flatpak/*.metainfo.xml
+            mv flatpak/com.rustdesk.RustDesk.metainfo.xml "flatpak/${BUNDLE_ID}.metainfo.xml"
+          fi
+          echo "BUNDLE_ID=${BUNDLE_ID}" >> "$GITHUB_ENV"
+
       - uses: rustdesk-org/run-on-arch-action@amd64-support
         name: Build rustdesk flatpak package for ${{ matrix.job.arch }}
         continue-on-error: true
@@ -868,7 +906,7 @@ jobs:
             pushd flatpak
             git clone https://github.com/flathub/shared-modules.git --depth=1
             flatpak-builder --user --install-deps-from=flathub -y --force-clean --repo=repo ./build ./rustdesk.json
-            flatpak build-bundle ./repo ${{ env.filename }}-${{ matrix.job.arch }}.flatpak com.rustdesk.RustDesk
+            flatpak build-bundle ./repo ${{ env.filename }}-${{ matrix.job.arch }}.flatpak "${{ env.BUNDLE_ID }}"
 
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
