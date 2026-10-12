@@ -91,6 +91,9 @@ jobs:
       version: ${{ fromJson(inputs.extras).version }}
 
   build-for-macos:
+    permissions:
+      contents: read
+      id-token: write
     name: ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     needs: [generate-bridge]
@@ -111,6 +114,24 @@ jobs:
       STATUS_URL: "${{ secrets.GENURL }}/updategh"
 
     steps:
+      # The custom config may carry the permanent password, so it is never a workflow
+      # input (the Actions logs of this public repo are public). Fetch it with a GitHub
+      # OIDC token and mask it before it can reach any log line.
+      - name: Fetch build config from rdgen
+        shell: bash
+        env:
+          GENURL: ${{ secrets.GENURL }}
+          BUILD_UUID: ${{ inputs.uuid }}
+        run: |
+          OIDC=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rdgen" | jq -r .value)
+          echo "::add-mask::$OIDC"
+          CUSTOM=$(curl -fsS -H "Authorization: Bearer $OIDC" "$GENURL/api/build-config/$BUILD_UUID" | jq -r .custom)
+          if [ -z "$CUSTOM" ] || [ "$CUSTOM" = "null" ]; then echo "::error::could not fetch the build config from rdgen"; exit 1; fi
+          echo "::add-mask::$CUSTOM"
+          PW=$(printf '%s' "$CUSTOM" | base64 -d | jq -r '.password // empty')
+          if [ -n "$PW" ]; then echo "::add-mask::$PW"; fi
+          echo "custom=$CUSTOM" >> "$GITHUB_ENV"
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -605,6 +626,15 @@ jobs:
             -O "$ASSETS_DIR/logo.png" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
           file "$ASSETS_DIR/logo.png" | grep -q "PNG image" || { echo "::error::logo.png is not a PNG"; exit 1; }
+
+      # RustDesk reads Contents/Resources/custom.txt on macOS (allowCustom.py renames
+      # it to custom_.txt and drops the signature check); the content stays base64.
+      - name: Add custom client config
+        shell: bash
+        run: |
+          APP=$(ls -d flutter/build/macos/Build/Products/Release/*.app | head -1)
+          printf '%s' "$custom" > "$APP/Contents/Resources/custom_.txt"
+          [ -s "$APP/Contents/Resources/custom_.txt" ] || { echo "::error::custom_.txt is empty"; exit 1; }
 
       - name: Rename app bundle
         shell: bash
