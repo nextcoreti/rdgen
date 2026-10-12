@@ -475,7 +475,7 @@ jobs:
       - name: Create custom_.txt file
         shell: bash
         run: |
-          echo -n "$custom" | base64 -d > ./Release/custom_.txt
+          printf "%s" "$custom" > ./Release/custom_.txt  # base64: read_custom_client() decodes it
 
       - name: Build self-extracted executable
         shell: bash
