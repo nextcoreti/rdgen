@@ -125,6 +125,24 @@ jobs:
             }
           # - { target: aarch64-pc-windows-msvc, os: windows-2022, arch: aarch64 }
     steps:
+      # The custom config may carry the permanent password, so it is never a workflow
+      # input (the Actions logs of this public repo are public). Fetch it with a GitHub
+      # OIDC token and mask it before it can reach any log line.
+      - name: Fetch build config from rdgen
+        shell: bash
+        env:
+          GENURL: ${{ secrets.GENURL }}
+          BUILD_UUID: ${{ inputs.uuid }}
+        run: |
+          OIDC=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rdgen" | jq -r .value)
+          echo "::add-mask::$OIDC"
+          CUSTOM=$(curl -fsS -H "Authorization: Bearer $OIDC" "$GENURL/api/build-config/$BUILD_UUID" | jq -r .custom)
+          if [ -z "$CUSTOM" ] || [ "$CUSTOM" = "null" ]; then echo "::error::could not fetch the build config from rdgen"; exit 1; fi
+          echo "::add-mask::$CUSTOM"
+          PW=$(printf '%s' "$CUSTOM" | base64 -d | jq -r '.password // empty')
+          if [ -n "$PW" ]; then echo "::add-mask::$PW"; fi
+          echo "custom=$CUSTOM" >> "$GITHUB_ENV"
+
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6
         with:
@@ -605,7 +623,7 @@ jobs:
       - name: Create custom_.txt file
         shell: bash
         run: |
-          echo -n "${{ inputs.custom }}" | base64 -d > ./rustdesk/custom_.txt
+          echo -n "$custom" | base64 -d > ./rustdesk/custom_.txt
 
       - name: Build self-extracted executable
         shell: bash

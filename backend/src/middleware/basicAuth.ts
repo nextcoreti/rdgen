@@ -6,6 +6,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/updategh',
   '/api/save_custom_client',
   '/api/get_png',
+  '/api/build-config/',
   '/api/auth/login',
   '/api/auth/logout',
   '/api/status/',

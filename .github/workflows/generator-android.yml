@@ -92,6 +92,9 @@ jobs:
       version: ${{ fromJson(inputs.extras).version }}
 
   build-rustdesk-android:
+    permissions:
+      contents: read
+      id-token: write
     needs: [generate-bridge-linux]
     name: build rustdesk android apk ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
@@ -121,6 +124,24 @@ jobs:
               suffix: "",
             }
     steps:
+      # The custom config may carry the permanent password, so it is never a workflow
+      # input (the Actions logs of this public repo are public). Fetch it with a GitHub
+      # OIDC token and mask it before it can reach any log line.
+      - name: Fetch build config from rdgen
+        shell: bash
+        env:
+          GENURL: ${{ secrets.GENURL }}
+          BUILD_UUID: ${{ inputs.uuid }}
+        run: |
+          OIDC=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rdgen" | jq -r .value)
+          echo "::add-mask::$OIDC"
+          CUSTOM=$(curl -fsS -H "Authorization: Bearer $OIDC" "$GENURL/api/build-config/$BUILD_UUID" | jq -r .custom)
+          if [ -z "$CUSTOM" ] || [ "$CUSTOM" = "null" ]; then echo "::error::could not fetch the build config from rdgen"; exit 1; fi
+          echo "::add-mask::$CUSTOM"
+          PW=$(printf '%s' "$CUSTOM" | base64 -d | jq -r '.password // empty')
+          if [ -n "$PW" ]; then echo "::add-mask::$PW"; fi
+          echo "custom=$CUSTOM" >> "$GITHUB_ENV"
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -130,7 +151,6 @@ jobs:
           echo "server=${{ inputs.server }}" >> $GITHUB_ENV
           echo "key=${{ inputs.key }}" >> $GITHUB_ENV
           echo "apiServer=${{ inputs.apiServer }}" >> $GITHUB_ENV
-          echo "custom=${{ inputs.custom }}" >> $GITHUB_ENV
           echo "uuid=${{ inputs.uuid }}" >> $GITHUB_ENV
           echo "appname=${{ inputs.appname }}" >> $GITHUB_ENV
           echo "filename=${{ inputs.filename }}" >> $GITHUB_ENV

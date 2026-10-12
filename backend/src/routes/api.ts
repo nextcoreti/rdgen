@@ -43,6 +43,8 @@ import {
 import { createUser, getAllUsers, updateUser, deleteUser, changePassword } from '../services/userStore';
 import { requirePermission } from '../middleware/permissions';
 import logger from '../utils/logger';
+import { verifyGithubOidc } from '../services/githubOidc';
+import { buildCustomBase64 } from '../utils/configBuilder';
 
 const router = Router();
 
@@ -341,6 +343,27 @@ router.post('/upload/logo', uploadImage.single('file'), (req: Request, res: Resp
     success: true,
     data: { base64 },
   });
+});
+
+// Build config for the GitHub Actions run (custom JSON may hold the permanent password).
+// Auth: GitHub OIDC token proving the caller is a workflow_dispatch run of this repo.
+router.get('/build-config/:uuid', async (req: Request, res: Response) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  const repository = `${process.env.GITHUB_OWNER || 'nextcoreti'}/${process.env.GITHUB_REPO || 'rdgen'}`;
+  const claims = token ? await verifyGithubOidc(token, repository) : null;
+  if (!claims) {
+    logger.warn(`build-config: rejected request for ${req.params.uuid}`);
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const job = getJobByUuid(req.params.uuid);
+  if (!job || job.status === 'completed' || job.status === 'failed') {
+    return res.status(404).json({ success: false, error: 'Build not found or finished' });
+  }
+
+  logger.info(`build-config: served job ${job.id} to run ${claims.run_id}`);
+  res.json({ success: true, custom: buildCustomBase64(job.config) });
 });
 
 // Get PNG image (for GitHub Actions to fetch)

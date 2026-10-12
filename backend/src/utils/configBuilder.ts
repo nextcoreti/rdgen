@@ -159,12 +159,8 @@ export function buildWorkflowInputs(
   genUrl: string,
   token?: string
 ): GitHubWorkflowInputs {
-  const custom = buildCustomJson(config);
   const extras = buildExtrasJson(config, genUrl, token);
 
-  // RustDesk's read_custom_client() calls decode64() first, so we must send base64
-  // Workflow uses cat to write directly to custom_.txt (no decoding in workflow)
-  const customBase64 = Buffer.from(JSON.stringify(custom)).toString('base64');
 
   // Build icon/logo/privacy links if provided
   let iconlink = 'false';
@@ -199,7 +195,9 @@ export function buildWorkflowInputs(
     server: config.host || 'rs-ny.rustdesk.com',
     key: config.key || 'OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=',
     apiServer: config.apiServer || `https://${config.host || 'admin.rustdesk.com'}`,
-    custom: customBase64,
+    // Never sent as an input: Actions logs of this public repo are public. The
+    // workflow fetches it from GET /api/build-config/:uuid (GitHub OIDC auth).
+    custom: 'fetch',
     uuid,
     iconlink,
     logolink,
@@ -219,4 +217,10 @@ export function getWorkflowName(platform: string): string {
     macos: 'generator-macos.yml',
   };
   return workflowMap[platform] || 'generator-windows.yml';
+}
+
+// Base64 custom client JSON, served to the build workflow by /api/build-config/:uuid.
+// RustDesk's read_custom_client() calls decode64() first, so it must stay base64.
+export function buildCustomBase64(config: BuildConfig): string {
+  return Buffer.from(JSON.stringify(buildCustomJson(config))).toString('base64');
 }

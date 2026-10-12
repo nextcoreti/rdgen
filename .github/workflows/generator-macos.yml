@@ -120,7 +120,6 @@ jobs:
           echo "server=${{ inputs.server }}" >> $GITHUB_ENV
           echo "key=${{ inputs.key }}" >> $GITHUB_ENV
           echo "apiServer=${{ inputs.apiServer }}" >> $GITHUB_ENV
-          echo "custom=${{ inputs.custom }}" >> $GITHUB_ENV
           echo "uuid=${{ inputs.uuid }}" >> $GITHUB_ENV
           echo "appname=${{ inputs.appname }}" >> $GITHUB_ENV
           echo "filename=${{ inputs.filename }}" >> $GITHUB_ENV
