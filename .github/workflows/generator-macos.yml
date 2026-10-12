@@ -576,8 +576,10 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          ASSETS_DIR="build/macos/Build/Products/Release/RustDesk.app/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
-          mkdir -p "$ASSETS_DIR"
+          # the bundle lives under flutter/ and build.py may already have renamed it to appname.app
+          APP=$(ls -d flutter/build/macos/Build/Products/Release/*.app | head -1)
+          ASSETS_DIR="$APP/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          if [ ! -d "$ASSETS_DIR" ]; then echo "::error::flutter assets dir not found: $ASSETS_DIR"; exit 1; fi
           if [ -f "$ASSETS_DIR/icon.svg" ]; then
             mv "$ASSETS_DIR/icon.svg" "$ASSETS_DIR/icon.svg.bak"
           fi
@@ -592,8 +594,10 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          ASSETS_DIR="build/macos/Build/Products/Release/RustDesk.app/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
-          mkdir -p "$ASSETS_DIR"
+          # the bundle lives under flutter/ and build.py may already have renamed it to appname.app
+          APP=$(ls -d flutter/build/macos/Build/Products/Release/*.app | head -1)
+          ASSETS_DIR="$APP/Contents/Frameworks/App.framework/Versions/Current/Resources/flutter_assets/assets"
+          if [ ! -d "$ASSETS_DIR" ]; then echo "::error::flutter assets dir not found: $ASSETS_DIR"; exit 1; fi
           curl -k -L --tlsv1.2 --proto =https --ssl-reqd \
             -H "User-Agent: Mozilla/5.0" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}" \
@@ -601,6 +605,7 @@ jobs:
           wget --no-check-certificate \
             -O "$ASSETS_DIR/logo.png" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
+          file "$ASSETS_DIR/logo.png" | grep -q "PNG image" || { echo "::error::logo.png is not a PNG"; exit 1; }
 
       - name: Rename app bundle
         shell: bash
