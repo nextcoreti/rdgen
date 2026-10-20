@@ -266,6 +266,15 @@ jobs:
           ndk-version: ${{ env.NDK_VERSION }}
           add-to-path: true
 
+      # Each RustDesk release pins its own vcpkg baseline in vcpkg.json (1.5.0 moved it);
+      # checking out an older vcpkg than that baseline breaks the dependency install.
+      - name: Use the vcpkg baseline of this RustDesk version
+        shell: bash
+        run: |
+          BASELINE=$(jq -r '."vcpkg-configuration"."default-registry".baseline // empty' vcpkg.json)
+          if [ -n "$BASELINE" ]; then echo "VCPKG_COMMIT_ID=$BASELINE" >> "$GITHUB_ENV"; fi
+          echo "vcpkg baseline: ${BASELINE:-$VCPKG_COMMIT_ID}"
+
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@v11
         with:

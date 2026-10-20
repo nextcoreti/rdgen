@@ -2,6 +2,7 @@ export type Platform = 'windows' | 'windows-x86' | 'linux' | 'android' | 'macos'
 
 export type RustDeskVersion =
   | 'nightly'
+  | '1.5.0'
   | '1.4.9'
   | '1.4.8'
   | '1.4.7'
