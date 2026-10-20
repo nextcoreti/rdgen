@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { BuildConfig, BuildJob, GitHubWorkflowInputs } from '../types';
 import { buildWorkflowInputs, getWorkflowName } from '../utils/configBuilder';
-import { updateJob, updateJobStatus, addJobLog } from './jobStore';
+import { getJob, updateJob, updateJobStatus, addJobLog } from './jobStore';
 import logger from '../utils/logger';
 
 // Mock mode flag - set to true when GITHUB_TOKEN is not available
@@ -133,6 +133,13 @@ async function pollWorkflowStatus(jobId: string, uuid: string): Promise<void> {
       return;
     }
 
+    // The workflow reports completion itself (/api/updategh) before GitHub finishes its
+    // post-job steps (cache save, cleanup); never move a finished job back to in_progress.
+    const latest = getJob(jobId);
+    if (!latest || ['completed', 'failed', 'cancelled'].includes(latest.status)) {
+      return;
+    }
+
     try {
       // Find the workflow run by searching recent runs
       if (!runId) {
@@ -166,7 +173,6 @@ async function pollWorkflowStatus(jobId: string, uuid: string): Promise<void> {
         if (run.data.status === 'completed') {
           if (run.data.conclusion === 'success') {
             // Get current job to check if artifact URLs were already set by /api/save_custom_client
-            const { getJob } = await import('./jobStore');
             const currentJob = getJob(jobId);
 
             // Only look for GitHub artifacts if URLs weren't already set by the workflow upload
