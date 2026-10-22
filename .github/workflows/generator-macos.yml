@@ -759,15 +759,28 @@ jobs:
           fi
           P8="$RUNNER_TEMP/notary.p8"
           printf '%s\n' "$NOTARY_KEY" > "$P8"
-          set +e
-          xcrun notarytool submit "$DMG" --key "$P8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
-            --wait --timeout 2h --output-format json > "$RUNNER_TEMP/notary.json"
-          set -e
-          cat "$RUNNER_TEMP/notary.json"
-          STATUS=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('status',''))" "$RUNNER_TEMP/notary.json" 2>/dev/null || true)
-          SUB_ID=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('id',''))" "$RUNNER_TEMP/notary.json" 2>/dev/null || true)
+          NOTARY_AUTH=(--key "$P8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+          jfield() { python3 -c "import json,sys;print(json.load(sys.stdin).get(sys.argv[1],''))" "$1" 2>/dev/null || true; }
+          # Apple's notary API times out now and then; retry the upload and keep polling
+          # the submission until it reaches a final status instead of failing on one error.
+          SUB_ID=""
+          for i in 1 2 3; do
+            SUB_ID=$(xcrun notarytool submit "$DMG" "${NOTARY_AUTH[@]}" --output-format json | jfield id) || true
+            [ -n "$SUB_ID" ] && break
+            sleep 30
+          done
+          echo "notary submission: ${SUB_ID:-none}"
+          STATUS=""
+          if [ -n "$SUB_ID" ]; then
+            for i in $(seq 1 120); do
+              STATUS=$(xcrun notarytool info "$SUB_ID" "${NOTARY_AUTH[@]}" --output-format json | jfield status) || true
+              echo "notary status ($i): ${STATUS:-no answer}"
+              case "$STATUS" in Accepted|Invalid|Rejected) break ;; esac
+              sleep 60
+            done
+          fi
           if [ "$STATUS" != "Accepted" ]; then
-            [ -n "$SUB_ID" ] && xcrun notarytool log "$SUB_ID" --key "$P8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" || true
+            [ -n "$SUB_ID" ] && xcrun notarytool log "$SUB_ID" "${NOTARY_AUTH[@]}" || true
             rm -f "$P8"
             echo "::error::notarization was not accepted (status: ${STATUS:-unknown})"
             exit 1

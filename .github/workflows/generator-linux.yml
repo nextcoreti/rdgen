@@ -240,6 +240,16 @@ jobs:
           if [ -n "$BASELINE" ]; then echo "VCPKG_COMMIT_ID=$BASELINE" >> "$GITHUB_ENV"; fi
           echo "vcpkg baseline: ${BASELINE:-$VCPKG_COMMIT_ID}"
 
+      # vcpkg 2026.07.29's SPDX scripts need CMake 4.3+, but the ARM64 runner ships 3.31.
+      # Older baselines keep the runner's CMake (CMake 4 drops pre-3.5 compatibility).
+      - name: Install CMake for vcpkg on Linux ARM64
+        if: matrix.job.arch == 'aarch64' && env.VCPKG_COMMIT_ID != '120deac3062162151622ca4860575a33844ba10b'
+        run: |
+          python3 -m pip install --user "cmake==4.3.0"
+          user_base="$(python3 -m site --user-base)"
+          "${user_base}/bin/cmake" --version
+          echo "${user_base}/bin" >> "${GITHUB_PATH}"
+
       - name: Setup vcpkg with Github Actions binary cache
         if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
         uses: lukka/run-vcpkg@v11
