@@ -423,7 +423,7 @@ jobs:
           sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.urlLink }}/privacy.html|" ./flutter/lib/desktop/pages/install_page.dart
 
       - name: change app id to custom
-        if: env.androidappid != 'com.carriez.flutter_hbb'
+        if: env.androidappid != '' && env.androidappid != 'com.carriez.flutter_hbb'
         continue-on-error: true
         shell: bash
         run: |
