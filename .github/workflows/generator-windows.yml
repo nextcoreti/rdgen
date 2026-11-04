@@ -484,7 +484,6 @@ jobs:
         shell: bash
         run: | 
           sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
-          sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
 
       # - name: run as admin
       #   continue-on-error: true
