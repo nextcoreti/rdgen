@@ -192,6 +192,39 @@ export default function VisualSection({ config, onChange }: VisualSectionProps) 
           </select>
         </div>
       </div>
+
+      <div className="mt-3">
+        <label className="input-label">Accent Color (cor de destaque)</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={/^#[0-9a-fA-F]{6}$/.test(config.accentColor || '') ? config.accentColor : '#0071FF'}
+            onChange={(e) => onChange({ accentColor: e.target.value })}
+            className="h-9 w-14 rounded cursor-pointer bg-transparent border border-[#333] p-0"
+            aria-label="Accent color"
+          />
+          <input
+            type="text"
+            value={config.accentColor || ''}
+            onChange={(e) => onChange({ accentColor: e.target.value })}
+            placeholder="#0071FF — vazio = padrão RustDesk"
+            className="input-field flex-1"
+          />
+          {config.accentColor && (
+            <button
+              type="button"
+              onClick={() => onChange({ accentColor: '' })}
+              className="text-red-500 hover:text-red-400 text-xs px-2"
+              aria-label="Limpar cor de destaque"
+            >
+              <i className="fas fa-times"></i>
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Colore botões, abas selecionadas e destaques do app (tema Flutter). Deixe vazio para o azul padrão.
+        </p>
+      </div>
     </div>
   );
 }
