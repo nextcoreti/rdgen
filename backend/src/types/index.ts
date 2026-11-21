@@ -54,6 +54,7 @@ export interface BuildConfig {
   urlLink: string;
   downloadLink: string;
   companyName: string;
+  supportName?: string;
   approveMode: ApproveMode;
   permanentPassword: string;
   denyLanDiscovery: boolean;
@@ -178,6 +179,7 @@ export interface ExtrasJson {
   xOffline: string;
   removeNewVersionNotif: string;
   compname: string;
+  supportName?: string;  // connection window big line (NextCore theme)
   accentColor?: string;  // #RRGGBB baked into the Flutter theme; '' = RustDesk default
   nextcoreRef?: string;  // branch in nextcoreti/rustdesk (NextCore theme); '' = official rustdesk tag
   token?: string;

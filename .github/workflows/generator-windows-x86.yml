@@ -243,15 +243,13 @@ jobs:
           
       - name: change company name
         if: fromJson(inputs.extras).compname != 'Purslane Ltd'
-        continue-on-error: true
         shell: bash
+        env:
+          COMPNAME: ${{ fromJson(inputs.extras).compname }}
+          PYTHONUTF8: "1"
         run: |
-          sed -i -e 's|PURSLANE|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|Copyright &copy; 2025 Purslane Ltd.|Copyright \&copy; 2025 ${{ fromJson(inputs.extras).compname }}|' ./src/ui/index.tis
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Ltd.|${{ fromJson(inputs.extras).compname }}|' ./res/setup.nsi
+          curl -fsSL -o compname.py https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/compname.py
+          python compname.py ./res/msi/preprocess.py ./src/ui/index.tis ./Cargo.toml ./libs/portable/Cargo.toml ./res/setup.nsi
              
       - name: change url to custom
         if: fromJson(inputs.extras).urlLink != 'https://rustdesk.com'
