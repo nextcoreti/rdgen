@@ -307,6 +307,27 @@ jobs:
           sed -i -e 's|&download_url|"${{ fromJson(inputs.extras).downloadLink }}"|' ./src/updater.rs
           sed -i -e 's|$downloadUrl/$downloadFile|${{ fromJson(inputs.extras).downloadLink }}|' ./flutter/lib/desktop/widgets/update_progress.dart
 
+      - name: change accent color to custom
+        if: fromJson(inputs.extras).accentColor
+        shell: bash
+        env:
+          ACCENT: ${{ fromJson(inputs.extras).accentColor }}
+        run: |
+          HEX="${ACCENT#\#}"
+          HEX="$(echo "$HEX" | tr '[:lower:]' '[:upper:]')"
+          if ! echo "$HEX" | grep -qE '^[0-9A-F]{6}$'; then
+            echo "::error::accentColor invalido (esperado #RRGGBB): $ACCENT"; exit 1
+          fi
+          F=./flutter/lib/common.dart
+          sed -i -e "s|Color(0xFF0071FF)|Color(0xFF${HEX})|g" "$F"
+          sed -i -e "s|Color(0x770071FF)|Color(0x77${HEX})|g" "$F"
+          sed -i -e "s|Color(0xAA0071FF)|Color(0xAA${HEX})|g" "$F"
+          sed -i -e "s|primary: Colors.blue|primary: accent|g" "$F"
+          if ! grep -q "0xFF${HEX}" "$F"; then
+            echo "::error::accent anchor nao encontrado em common.dart - upstream mudou, patch precisa de revisao"; exit 1
+          fi
+          echo "accent color aplicado: #${HEX}"
+
       - name: set server, key, and apiserver
         continue-on-error: true
         shell: bash

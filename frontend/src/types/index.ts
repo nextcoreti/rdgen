@@ -77,6 +77,7 @@ export interface BuildConfig {
   iconBase64?: string;
   logoBase64?: string;
   privacyBase64?: string;
+  accentColor: string;
   theme: ThemeMode;
   themeMode: PermissionMode;
 
@@ -185,6 +186,7 @@ export const DEFAULT_BUILD_CONFIG: BuildConfig = {
   enableDirectIp: false,
   autoCloseInactivity: false,
   allowHideConnectionWindow: false,
+  accentColor: '',
   theme: 'system',
   themeMode: 'default',
   permissionsMode: 'default',

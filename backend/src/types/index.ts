@@ -62,6 +62,7 @@ export interface BuildConfig {
   iconBase64?: string;
   logoBase64?: string;
   privacyBase64?: string;
+  accentColor: string;
   theme: ThemeMode;
   themeMode: PermissionMode;
   permissionsMode: PermissionMode;
@@ -176,6 +177,7 @@ export interface ExtrasJson {
   xOffline: string;
   removeNewVersionNotif: string;
   compname: string;
+  accentColor?: string;  // #RRGGBB baked into the Flutter theme; '' = RustDesk default
   token?: string;
   tokenApiUrl?: string;  // URL for token-based authentication (MVP)
 }

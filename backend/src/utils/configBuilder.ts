@@ -148,6 +148,11 @@ export function buildExtrasJson(
     xOffline: config.xOffline ? 'true' : 'false',
     removeNewVersionNotif: config.removeNewVersionNotif ? 'true' : 'false',
     compname: config.companyName || 'Purslane Ltd',
+    // Accent color baked into the Flutter theme. Validate to #RRGGBB; otherwise
+    // send '' so the workflow skips the patch and keeps RustDesk's default blue.
+    accentColor: /^#[0-9a-fA-F]{6}$/.test(config.accentColor || '')
+      ? (config.accentColor as string)
+      : '',
     token,
     tokenApiUrl,  // MVP: Token authentication API URL
   };
