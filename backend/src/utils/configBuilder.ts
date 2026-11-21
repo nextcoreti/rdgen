@@ -137,12 +137,18 @@ export function buildExtrasJson(
   // Token API URL for MVP - use the same server as genUrl
   const tokenApiUrl = process.env.TOKEN_API_URL || genUrl;
 
+  // '<ver>-nextcore' builds the NextCore theme from nextcoreti/rustdesk (branch
+  // nextcore/<ver>); the workflow still sees the plain upstream version number.
+  const isNextcore = config.version.endsWith('-nextcore');
+  const baseVersion = isNextcore ? config.version.replace(/-nextcore$/, '') : config.version;
+
   return {
     genurl: genUrl,
     urlLink: config.urlLink || 'https://rustdesk.com',
     downloadLink: config.downloadLink || 'https://rustdesk.com/download',
     delayFix: config.delayFix ? 'true' : 'false',
-    version: config.version,
+    version: baseVersion,
+    nextcoreRef: isNextcore ? `nextcore/${baseVersion}` : '',
     rdgen: 'true',
     cycleMonitor: config.cycleMonitor ? 'true' : 'false',
     xOffline: config.xOffline ? 'true' : 'false',

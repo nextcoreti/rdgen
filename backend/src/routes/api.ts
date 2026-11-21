@@ -99,6 +99,14 @@ router.post('/build', optionalApiKey, checkBuildRateLimit, async (req: Request, 
       config = { ...req.apiKey.defaultConfig, ...config };
     }
 
+    // The NextCore theme is only wired into the Windows workflow so far.
+    if (config.version?.endsWith('-nextcore') && config.platform !== 'windows') {
+      return res.status(400).json({
+        success: false,
+        error: 'A versão com tema NextCore por enquanto só é compilada para Windows 64-bit.',
+      });
+    }
+
     // Validate required fields
     if (!config.configName) {
       return res.status(400).json({

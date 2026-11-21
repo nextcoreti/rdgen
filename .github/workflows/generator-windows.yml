@@ -199,8 +199,9 @@ jobs:
         if: ${{ env.VERSION != 'master' }}
         uses: actions/checkout@v4
         with:
-          repository: rustdesk/rustdesk
-          ref: refs/tags/${{ env.VERSION }}
+          # nextcoreRef set => NextCore theme fork (nextcoreti/rustdesk, branch nextcore/<ver>)
+          repository: ${{ fromJson(inputs.extras).nextcoreRef && 'nextcoreti/rustdesk' || 'rustdesk/rustdesk' }}
+          ref: ${{ fromJson(inputs.extras).nextcoreRef || format('refs/tags/{0}', env.VERSION) }}
           submodules: recursive
 
       - name: Checkout source code
@@ -318,6 +319,16 @@ jobs:
           if ! echo "$HEX" | grep -qE '^[0-9A-F]{6}$'; then
             echo "::error::accentColor invalido (esperado #RRGGBB): $ACCENT"; exit 1
           fi
+          B=./flutter/lib/nextcore/brand.dart
+          if [ -f "$B" ]; then
+            # NextCore fork: the accent lives in brand.dart
+            sed -E -i -e "s/(static const Color accent = Color\(0x)FF[0-9A-Fa-f]{6}\)/\1FF${HEX})/" \
+                      -e "s/(static const Color accent50 = Color\(0x)77[0-9A-Fa-f]{6}\)/\177${HEX})/" \
+                      -e "s/(static const Color accent80 = Color\(0x)AA[0-9A-Fa-f]{6}\)/\1AA${HEX})/" "$B"
+            if ! grep -q "accent = Color(0xFF${HEX})" "$B"; then
+              echo "::error::accent nao encontrado em nextcore/brand.dart - revisar o patch"; exit 1
+            fi
+          else
           F=./flutter/lib/common.dart
           sed -i -e "s|Color(0xFF0071FF)|Color(0xFF${HEX})|g" "$F"
           sed -i -e "s|Color(0x770071FF)|Color(0x77${HEX})|g" "$F"
@@ -325,6 +336,7 @@ jobs:
           sed -i -e "s|primary: Colors.blue|primary: accent|g" "$F"
           if ! grep -q "0xFF${HEX}" "$F"; then
             echo "::error::accent anchor nao encontrado em common.dart - upstream mudou, patch precisa de revisao"; exit 1
+          fi
           fi
           echo "accent color aplicado: #${HEX}"
 
