@@ -139,7 +139,7 @@ export function buildExtrasJson(
 
   // '<ver>-nextcore' builds the NextCore theme from nextcoreti/rustdesk (branch
   // nextcore/<ver>); the workflow still sees the plain upstream version number.
-  const isNextcore = config.version.endsWith('-nextcore');
+  const isNextcore = (config.version || '').endsWith('-nextcore');
   const baseVersion = isNextcore ? config.version.replace(/-nextcore$/, '') : config.version;
 
   return {
