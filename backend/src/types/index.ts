@@ -2,6 +2,7 @@ export type Platform = 'windows' | 'windows-x86' | 'linux' | 'android' | 'macos'
 
 export type RustDeskVersion =
   | 'nightly'
+  | '1.5.3-nextcore'
   | '1.5.3'
   | '1.5.1'
   | '1.5.0'
@@ -178,6 +179,7 @@ export interface ExtrasJson {
   removeNewVersionNotif: string;
   compname: string;
   accentColor?: string;  // #RRGGBB baked into the Flutter theme; '' = RustDesk default
+  nextcoreRef?: string;  // branch in nextcoreti/rustdesk (NextCore theme); '' = official rustdesk tag
   token?: string;
   tokenApiUrl?: string;  // URL for token-based authentication (MVP)
 }

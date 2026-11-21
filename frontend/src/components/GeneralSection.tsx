@@ -23,7 +23,7 @@ export default function GeneralSection({ config, onChange }: GeneralSectionProps
       >
         {RUSTDESK_VERSIONS.map((v) => (
           <option key={v} value={v}>
-            {v}
+            {v.endsWith('-nextcore') ? `${v.replace(/-nextcore$/, '')} — tema NextCore (só Windows)` : v}
           </option>
         ))}
       </select>
