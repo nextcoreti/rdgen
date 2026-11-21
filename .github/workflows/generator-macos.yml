@@ -216,18 +216,10 @@ jobs:
           # MACSTUFF Update AppInfo.xcconfig
           sed -i '' -e 's|PRODUCT_NAME = .*|PRODUCT_NAME = ${{ env.appname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
           sed -i '' -e 's|PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = com.${{ env.appname }}.app|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
-          sed -i '' -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
-          sed -i '' -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
           # Keep DEVELOPMENT_TEAM if it exists, don't blank it out
 
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./src/main.rs
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|Purslane Ltd|${{ env.compname }}|' ./src/main.rs
+          curl -fsSL -o compname.py https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/compname.py
+          COMPNAME="$compname" python3 compname.py ./flutter/macos/Runner/Configs/AppInfo.xcconfig ./Cargo.toml ./libs/portable/Cargo.toml ./flutter/lib/desktop/pages/desktop_setting_page.dart ./src/main.rs
           
           # Update Xcode project settings
           sed -i '' -e 's/PRODUCT_NAME = "RustDesk"/PRODUCT_NAME = "${{ env.appname }}"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
@@ -506,8 +498,8 @@ jobs:
         continue-on-error: true
         if: env.xOffline == 'true'
         run: |
-          wget https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.diff
-          git apply xoffline.diff
+          wget https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.py
+          python3 xoffline.py
 
       - name: hide-cm
         continue-on-error: true

@@ -66,8 +66,25 @@ export default function ServerSection({ config, onChange }: ServerSectionProps) 
         value={config.companyName}
         onChange={(e) => onChange({ companyName: e.target.value })}
         className="input-field"
-        placeholder="Purslane Ltd"
+        placeholder="ex.: Next Core TI Ltda."
       />
+      <p className="text-xs text-gray-500 mt-1">
+        Aparece em Sobre, nas propriedades do programa e no instalador. Prefira só o nome, sem endereço.
+      </p>
+
+      <label className="input-label mt-3">Nome no aviso de conexão</label>
+      <input
+        type="text"
+        value={config.supportName || ''}
+        onChange={(e) => onChange({ supportName: e.target.value })}
+        className="input-field"
+        placeholder="ex.: Suporte Next Core TI"
+        maxLength={40}
+      />
+      <p className="text-xs text-gray-500 mt-1">
+        Fica em destaque na janela que o cliente vê quando alguém conecta, com o nome do técnico menor embaixo.
+        Só nas versões com tema NextCore.
+      </p>
     </div>
   );
 }

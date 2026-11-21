@@ -273,16 +273,15 @@ jobs:
           
       - name: change company name
         if: fromJson(inputs.extras).compname != 'Purslane Ltd'
-        continue-on-error: true
         shell: bash
+        env:
+          COMPNAME: ${{ fromJson(inputs.extras).compname }}
+          PYTHONUTF8: "1"
         run: |
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|PURSLANE|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|"Copyright © 2025 Purslane Ltd. All rights reserved."|"Copyright © 2025 ${{ fromJson(inputs.extras).compname }}. All rights reserved."|' ./flutter/windows/runner/Runner.rc
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./flutter/windows/runner/Runner.rc
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./libs/portable/Cargo.toml
+          # compname.py covers old and new "Purslane" spellings and fails the build
+          # if none is found (RustDesk renamed it again) instead of shipping "Purslane".
+          curl -fsSL -o compname.py https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/compname.py
+          python compname.py ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./flutter/windows/runner/Runner.rc ./Cargo.toml ./libs/portable/Cargo.toml
              
       - name: change url to custom
         if: fromJson(inputs.extras).urlLink != 'https://rustdesk.com'
@@ -339,6 +338,30 @@ jobs:
           fi
           fi
           echo "accent color aplicado: #${HEX}"
+
+      - name: set connection window support name
+        if: fromJson(inputs.extras).supportName
+        shell: bash
+        env:
+          SUPPORT_NAME: ${{ fromJson(inputs.extras).supportName }}
+          PYTHONUTF8: "1"
+        run: |
+          B=./flutter/lib/nextcore/brand.dart
+          if [ ! -f "$B" ]; then
+            echo "::notice::'Nome no aviso de conexao' so vale nas versoes com tema NextCore; ignorado"; exit 0
+          fi
+          python - "$B" <<'PY'
+          import os, sys
+          p = sys.argv[1]
+          v = os.environ["SUPPORT_NAME"].replace("\\", "").replace("'", "\u2019").replace("$", "")
+          s = open(p, encoding="utf-8").read()
+          old = "static const String supportName = '';"
+          if s.count(old) != 1:
+              print("::error::supportName nao encontrado em nextcore/brand.dart - revisar o passo")
+              sys.exit(1)
+          open(p, "w", encoding="utf-8").write(s.replace(old, "static const String supportName = '%s';" % v))
+          print("supportName aplicado em brand.dart")
+          PY
 
       - name: set server, key, and apiserver
         continue-on-error: true
@@ -508,8 +531,8 @@ jobs:
         continue-on-error: true
         if: fromJson(inputs.extras).xOffline == 'true'
         run: |
-          Invoke-WebRequest -Uri https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.diff -OutFile xoffline.diff
-          git apply xoffline.diff
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.py -OutFile xoffline.py
+          python xoffline.py
 
       - name: removeNewVersionNotif
         continue-on-error: true

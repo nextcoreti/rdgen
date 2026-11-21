@@ -399,14 +399,8 @@ jobs:
           sed -i 's|RustDesk|${{ env.appname }}|' ./flutter/lib/main.dart
           sed -i 's|"RustDesk"|"${{ env.appname }}"|' ./flutter/lib/desktop/widgets/tabbar_widget.dart
           sed -i 's|"RustDesk"|"${{ env.appname }}"|' ./libs/hbb_common/src/config.rs
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./src/main.rs
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Ltd|${{ env.compname }}|' ./src/main.rs
+          curl -fsSL -o compname.py https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/compname.py
+          COMPNAME="$compname" python3 compname.py ./flutter/lib/desktop/pages/desktop_setting_page.dart ./Cargo.toml ./libs/portable/Cargo.toml ./src/main.rs
 
       - name: change url to custom
         if: env.urlLink != 'https://rustdesk.com'
@@ -469,8 +463,8 @@ jobs:
           shell: bash
           continue_on_error: true
           command: |
-            wget https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.diff
-            git apply xoffline.diff
+            wget https://raw.githubusercontent.com/nextcoreti/rdgen/refs/heads/master/.github/patches/xoffline.py
+            python3 xoffline.py
 
       - name: hide-cm
         if: env.hidecm == 'true'

@@ -129,6 +129,21 @@ export function buildCustomJson(config: BuildConfig): CustomJson {
   return custom;
 }
 
+// Keeps panel text safe in every file the workflows write it to (.rc, .toml, .py,
+// Dart/Rust strings, WiX XML, sed). Same rules as .github/patches/compname.py.
+export function sanitizeBrandText(s: string | undefined, max: number): string {
+  return (s || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ')
+    .replace(/"/g, '\u201d')
+    .replace(/'/g, '\u2019')
+    .replace(/&/g, '\uff06')
+    .replace(/[\\$|<>`{}]/g, '')
+    .trim()
+    .slice(0, max);
+}
+
 export function buildExtrasJson(
   config: BuildConfig,
   genUrl: string,
@@ -153,7 +168,9 @@ export function buildExtrasJson(
     cycleMonitor: config.cycleMonitor ? 'true' : 'false',
     xOffline: config.xOffline ? 'true' : 'false',
     removeNewVersionNotif: config.removeNewVersionNotif ? 'true' : 'false',
-    compname: config.companyName || 'Purslane Ltd',
+    compname: sanitizeBrandText(config.companyName, 150) || 'Purslane Ltd',
+    // Big line of the connection window (NextCore theme only); '' = upstream layout.
+    supportName: sanitizeBrandText(config.supportName, 40),
     // Accent color baked into the Flutter theme. Validate to #RRGGBB; otherwise
     // send '' so the workflow skips the patch and keeps RustDesk's default blue.
     accentColor: /^#[0-9a-fA-F]{6}$/.test(config.accentColor || '')

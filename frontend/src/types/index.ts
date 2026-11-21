@@ -65,6 +65,7 @@ export interface BuildConfig {
   urlLink: string;
   downloadLink: string;
   companyName: string;
+  supportName?: string;
 
   // Security
   approveMode: ApproveMode;
@@ -181,6 +182,7 @@ export const DEFAULT_BUILD_CONFIG: BuildConfig = {
   urlLink: '',
   downloadLink: '',
   companyName: '',
+  supportName: '',
   approveMode: 'password-click',
   permanentPassword: '',
   denyLanDiscovery: false,
