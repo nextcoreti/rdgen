@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { validatePassword, getUserByUsername, PERMISSIONS, Role } from '../services/userStore';
+import { isAdminSecret, isValidApiKeyHeader } from './apiKeyAuth';
 
 const PUBLIC_ENDPOINTS = [
   '/api/health',
@@ -23,8 +24,9 @@ const sessions: Map<string, { userId: string; username: string; role: Role; expi
 
 export function basicAuth(req: Request, res: Response, next: NextFunction) {
   if (isPublicEndpoint(req.path)) return next();
-  if (req.headers['x-api-key']) return next();
-  if (req.headers['x-admin-secret']) return next();
+  // SECURITY: these headers used to bypass auth by mere presence. Validate the value.
+  if (isValidApiKeyHeader(req.headers['x-api-key'])) return next();
+  if (isAdminSecret(req.headers['x-admin-secret'])) return next();
 
   const sessionToken = req.headers['x-session-token'] as string;
   if (sessionToken) {

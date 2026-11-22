@@ -106,6 +106,15 @@ export function deleteApiKey(id: string): boolean {
   return result.changes > 0;
 }
 
+// Authentication only (exists, active, not expired). Build quota is checked separately
+// in validateApiKey/checkBuildRateLimit, so a key over quota still reaches other routes.
+export function isApiKeyUsable(key: string): boolean {
+  const apiKey = getApiKeyByKey(key);
+  if (!apiKey || !apiKey.isActive) return false;
+  if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) return false;
+  return true;
+}
+
 export function validateApiKey(key: string): { valid: boolean; apiKey?: ApiKey; error?: string } {
   const apiKey = getApiKeyByKey(key);
 

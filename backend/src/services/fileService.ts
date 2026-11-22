@@ -33,12 +33,18 @@ export function saveBase64Image(
   return filePath;
 }
 
-export function getImagePath(uuid: string, filename: string): string | null {
-  const filePath = path.join(UPLOADS_DIR, uuid, filename);
-  if (fs.existsSync(filePath)) {
-    return filePath;
-  }
-  return null;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IMAGE_NAMES = new Set(['icon.png', 'logo.png', 'privacy.png']);
+
+// Backs the PUBLIC /api/get_png route: only server-generated uuids and the three image
+// names are allowed, and the final path must stay inside UPLOADS_DIR (no traversal).
+export function getImagePath(uuid: unknown, filename: unknown): string | null {
+  if (typeof uuid !== 'string' || typeof filename !== 'string') return null;
+  if (!UUID_RE.test(uuid) || !IMAGE_NAMES.has(filename)) return null;
+  const base = path.resolve(UPLOADS_DIR);
+  const filePath = path.resolve(base, uuid, filename);
+  if (!filePath.startsWith(base + path.sep)) return null;
+  return fs.existsSync(filePath) ? filePath : null;
 }
 
 export function saveBuildArtifact(

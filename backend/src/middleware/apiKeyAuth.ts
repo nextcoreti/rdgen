@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import { validateApiKey, incrementBuildCount, recordApiKeyUsage } from '../services/apiKeyStore';
+import { validateApiKey, isApiKeyUsable, incrementBuildCount, recordApiKeyUsage } from '../services/apiKeyStore';
 import { ApiKey } from '../types';
 import logger from '../utils/logger';
 
@@ -13,8 +14,21 @@ declare global {
   }
 }
 
-// Admin secret for managing API keys (set in .env)
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'change-this-secret';
+// Admin secret for managing API keys (set in .env). No default: without it, admin access is off.
+const ADMIN_SECRET = process.env.ADMIN_SECRET || '';
+
+// True only for the configured admin secret (constant-time compare).
+export function isAdminSecret(value: unknown): boolean {
+  if (typeof value !== 'string' || !ADMIN_SECRET) return false;
+  const a = Buffer.from(value);
+  const b = Buffer.from(ADMIN_SECRET);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// True only for an existing, active API key (presence of the header is not enough).
+export function isValidApiKeyHeader(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && isApiKeyUsable(value);
+}
 
 // Middleware to validate API key (required)
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
@@ -60,8 +74,12 @@ export function optionalApiKey(req: Request, res: Response, next: NextFunction) 
       req.apiKey = result.apiKey;
       req.tenantId = result.apiKey.tenantId;
       recordApiKeyUsage(result.apiKey.id);
+    } else {
+      // A key that was sent but fails (over quota, disabled, expired) must not fall
+      // through as "no key": that used to skip the build quota entirely.
+      const overQuota = (result.error || '').startsWith('Rate limit');
+      return res.status(overQuota ? 429 : 401).json({ success: false, error: result.error });
     }
-    // If invalid, we just continue without setting apiKey
   }
 
   next();
@@ -69,9 +87,7 @@ export function optionalApiKey(req: Request, res: Response, next: NextFunction) 
 
 // Middleware to require admin secret
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const adminSecret = req.headers['x-admin-secret'] as string;
-
-  if (!adminSecret || adminSecret !== ADMIN_SECRET) {
+  if (!isAdminSecret(req.headers['x-admin-secret'])) {
     return res.status(403).json({
       success: false,
       error: 'Admin access required',

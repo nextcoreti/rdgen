@@ -184,9 +184,11 @@ router.get('/status/:jobId', (req: Request, res: Response) => {
     });
   }
 
+  // Public route: never return the build config (it can hold the permanent password).
+  const { config: _config, ...safeJob } = job;
   res.json({
     success: true,
-    data: job,
+    data: safeJob,
   });
 });
 
@@ -385,7 +387,7 @@ router.get('/get_png', (req: Request, res: Response) => {
     });
   }
 
-  const imagePath = getImagePath(uuid as string, filename as string);
+  const imagePath = getImagePath(uuid, filename);
   if (!imagePath) {
     return res.status(404).json({
       success: false,
@@ -442,9 +444,26 @@ router.post('/updategh', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+// GitHub Actions callbacks must prove (GitHub OIDC) they are a workflow_dispatch run of
+// this repo. Checked before multer reads the body, so unauthenticated uploads are dropped.
+async function requireGithubOidc(req: Request, res: Response, next: () => void) {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const repository = `${process.env.GITHUB_OWNER || 'nextcoreti'}/${process.env.GITHUB_REPO || 'rdgen'}`;
+    const claims = token ? await verifyGithubOidc(token, repository) : null;
+    if (claims) return next();
+  } catch (err) {
+    logger.warn(`${req.path}: OIDC check failed: ${(err as Error).message}`);
+  }
+  logger.warn(`${req.path}: rejected request without a valid GitHub OIDC token`);
+  return res.status(401).json({ success: false, error: 'Unauthorized' });
+}
+
 // Save custom client (called by GitHub Actions)
 router.post(
   '/save_custom_client',
+  requireGithubOidc,
   uploadArtifact.single('file'),
   async (req: Request, res: Response) => {
     const { uuid } = req.body;
@@ -464,13 +483,18 @@ router.post(
       });
     }
 
-    const filePath = saveBuildArtifact(uuid, req.file.originalname, req.file.buffer);
+    // Plain file name only: an uploaded name like "../../x.exe" must not leave the build dir.
+    const safeName = path.basename(req.file.originalname);
+    if (!safeName || safeName.startsWith('.')) {
+      return res.status(400).json({ success: false, error: 'Invalid file name' });
+    }
+    const filePath = saveBuildArtifact(uuid, safeName, req.file.buffer);
     logger.info(`Saved build artifact: ${filePath}`);
 
     // Code signing is done in the GitHub Actions workflows (jsign + Google Cloud KMS)
 
     // Update job with artifact URL
-    const filename = req.file.originalname.toLowerCase();
+    const filename = safeName.toLowerCase();
     const isExe = filename.endsWith('.exe');
     const isMsi = filename.endsWith('.msi');
     const isDeb = filename.endsWith('.deb');
